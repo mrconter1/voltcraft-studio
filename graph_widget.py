@@ -146,11 +146,8 @@ class TimeSeriesGraphWidget(QWidget):
         # Connect mouse click events to the plot widget's scene
         self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
         
-        # Add legend with dark styling
-        self.legend = self.plot_widget.addLegend(
-            brush=(30, 30, 30, 180),
-            pen={'color': '#666666', 'width': 1}
-        )
+        # Legend will be created when data is loaded
+        self.legend = None
         
         layout.addWidget(self.plot_widget)
         
@@ -197,10 +194,13 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Clear previous plots
         self.plot_widget.clear()
-        self.legend = self.plot_widget.addLegend(
-            brush=(30, 30, 30, 180),
-            pen={'color': '#666666', 'width': 1}
-        )
+        
+        # Create legend (only when we have data to show)
+        if self.legend is None or len(self.plot_widget.plotItem.legend.items) == 0:
+            self.legend = self.plot_widget.addLegend(
+                brush=(30, 30, 30, 180),
+                pen={'color': '#666666', 'width': 1}
+            )
         
         if not time_series_data or len(time_series_data.indices) == 0:
             self.info_label.setText("No data to display")
