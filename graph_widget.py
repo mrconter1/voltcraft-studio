@@ -304,7 +304,7 @@ class TimeSeriesGraphWidget(QWidget):
     def set_loading_progress(self, value: int, message: str):
         """Update loading progress bar"""
         self.progress_bar.setValue(value)
-        self.progress_bar.setFormat(f"{message} - {value}%")
+        self.progress_bar.setFormat(f"{message} {value}%")
         if not self.progress_bar.isVisible():
             self.progress_bar.show()
     

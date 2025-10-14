@@ -40,3 +40,11 @@ CHANNEL_PARAMETERS = [
 FILE_DIALOG_TITLE = "Open Text File"
 FILE_DIALOG_FILTER = "Text Files (*.txt);;All Files (*.*)"
 
+# Parser settings
+PARSER_BATCH_SIZE = 100000  # Number of lines to process in each batch
+PARSER_PROGRESS_METADATA_START = 5  # Progress % when starting metadata read
+PARSER_PROGRESS_METADATA_DONE = 10  # Progress % when metadata parsing complete
+PARSER_PROGRESS_DATA_START = 15  # Progress % when starting data parsing
+PARSER_PROGRESS_DATA_END = 90  # Progress % when data parsing complete
+PARSER_PROGRESS_NUMPY_CONVERSION = 95  # Progress % during numpy conversion
+
