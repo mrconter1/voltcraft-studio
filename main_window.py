@@ -1,16 +1,17 @@
 """Main window for Voltcraft Studio"""
-from typing import List
+from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QProgressDialog
+    QProgressDialog, QSplitter
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 
-from models import ChannelInfo
+from models import ChannelInfo, TimeSeriesData
 from parser import ChannelDataParser
 from icons import IconFactory
+from graph_widget import TimeSeriesGraphWidget
 from constants import (
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
@@ -20,7 +21,7 @@ from constants import (
 
 class FileLoaderThread(QThread):
     """Background thread for loading and parsing files"""
-    finished = pyqtSignal(list)  # Emits list of ChannelInfo
+    finished = pyqtSignal(list, object)  # Emits (list of ChannelInfo, TimeSeriesData)
     error = pyqtSignal(str)  # Emits error message
     progress = pyqtSignal(int)  # Emits progress percentage
     
@@ -38,10 +39,10 @@ class FileLoaderThread(QThread):
             
             # Parse content
             self.progress.emit(50)
-            channels = ChannelDataParser.parse(content)
+            channels, time_series = ChannelDataParser.parse(content)
             
             self.progress.emit(100)
-            self.finished.emit(channels)
+            self.finished.emit(channels, time_series)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -64,11 +65,24 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create splitter to divide table and graph
+        splitter = QSplitter(Qt.Orientation.Vertical)
         
         # Create table widget for channel info
         self.channel_table = QTableWidget()
         self.channel_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self.channel_table)
+        splitter.addWidget(self.channel_table)
+        
+        # Create graph widget for time series
+        self.graph_widget = TimeSeriesGraphWidget()
+        splitter.addWidget(self.graph_widget)
+        
+        # Set initial splitter sizes (30% table, 70% graph)
+        splitter.setSizes([200, 400])
+        
+        layout.addWidget(splitter)
         
         # Initialize loader thread and progress dialog
         self.loader_thread = None
@@ -176,13 +190,18 @@ class MainWindow(QMainWindow):
         if self.progress_dialog:
             self.progress_dialog.setValue(value)
     
-    def _on_file_loaded(self, channels: List[ChannelInfo]):
+    def _on_file_loaded(self, channels: List[ChannelInfo], time_series: TimeSeriesData):
         """Handle successful file load"""
         if self.progress_dialog:
             self.progress_dialog.close()
             self.progress_dialog = None
         
+        # Display channel info in table
         self.display_channel_info(channels)
+        
+        # Display time series in graph
+        self.graph_widget.plot_data(time_series)
+        
         self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
         
         # Clean up thread
