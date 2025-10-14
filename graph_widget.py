@@ -222,10 +222,11 @@ class TimeSeriesGraphWidget(QWidget):
                     name=channel_name
                 )
                 
-                # Enable very aggressive automatic downsampling for performance
-                # ds=1000 means downsample by factor of 1000 when zoomed out (10M -> 10k points)
-                # method='subsample' is faster than 'peak'
-                plot_item.setDownsampling(ds=1000, auto=True, method='subsample')
+                # Enable automatic downsampling with 'peak' method for best quality
+                # ds=500 means downsample by factor of 500 when zoomed out (10M -> 20k points)
+                # method='peak' preserves min/max, ensuring spikes/glitches are never missed
+                # Perfect for oscilloscope data with GPU acceleration
+                plot_item.setDownsampling(ds=500, auto=True, method='peak')
                 
                 # Only render data that's visible in the viewport
                 plot_item.setClipToView(True)
@@ -260,7 +261,7 @@ class TimeSeriesGraphWidget(QWidget):
             self.info_label.setText(
                 f"Loaded {num_samples:,} samples across {num_channels} channel(s){duration_str} | "
                 f"Voltage range: {min_v:.2f} to {max_v:.2f} mV | "
-                f"Scroll: zoom both | Ctrl+Scroll: zoom X | Shift+Scroll: zoom Y"
+                f"GPU-accelerated with peak downsampling | Scroll: zoom both | Ctrl+Scroll: zoom X | Shift+Scroll: zoom Y"
             )
         else:
             self.info_label.setText(
