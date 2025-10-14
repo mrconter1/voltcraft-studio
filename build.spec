@@ -15,6 +15,7 @@ a = Analysis(
         'numpy',
         'OpenGL',
         'OpenGL.platform.win32',
+        'pint',
     ],
     hookspath=[],
     hooksconfig={},
