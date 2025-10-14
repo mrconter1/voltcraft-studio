@@ -3,7 +3,7 @@ from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QProgressDialog, QTabWidget
+    QProgressDialog, QTabWidget, QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -185,6 +185,15 @@ class MainWindow(QMainWindow):
         open_action.setToolTip("Open oscilloscope data file")
         open_action.triggered.connect(self.open_file)
         toolbar.addAction(open_action)
+        
+        # Add separator
+        toolbar.addSeparator()
+        
+        # Create help action
+        help_action = QAction(IconFactory.create_help_icon(), "Help", self)
+        help_action.setToolTip("Show controls and keyboard shortcuts")
+        help_action.triggered.connect(self.show_help)
+        toolbar.addAction(help_action)
     
     def display_channel_info(self, channels: List[ChannelInfo]):
         """Display channel information in table"""
@@ -225,6 +234,37 @@ class MainWindow(QMainWindow):
         if file_path:
             self.current_file_path = file_path
             self._load_file_with_progress(file_path)
+    
+    def show_help(self):
+        """Show help dialog with controls and keyboard shortcuts"""
+        help_text = """
+<h3>Mouse Controls</h3>
+<p style='margin-left: 20px;'>
+<b>Left Drag</b> - Pan the graph<br>
+<b>Right Drag</b> - Box zoom selection<br>
+<b>Mouse Wheel</b> - Zoom both axes
+</p>
+
+<h3>Keyboard Shortcuts</h3>
+<p style='margin-left: 20px;'>
+<b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
+<b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
+</p>
+
+<h3>Tabs</h3>
+<p style='margin-left: 20px;'>
+<b>Waveform</b> - Interactive oscilloscope graph view<br>
+<b>Channel Info</b> - Detailed metadata for all channels
+</p>
+"""
+        
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Voltcraft Studio - Help")
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+        msg_box.setText(help_text)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
     
     def _load_file_with_progress(self, file_path: str):
         """Load file in background with progress dialog"""

@@ -85,4 +85,31 @@ class IconFactory:
         
         painter.end()
         return QIcon(pixmap)
+    
+    @staticmethod
+    def create_help_icon() -> QIcon:
+        """Create a help/info icon with question mark"""
+        pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw circle background with blue gradient
+        gradient = QLinearGradient(0, 0, 0, 64)
+        gradient.setColorAt(0, QColor(66, 133, 244))  # Google Blue
+        gradient.setColorAt(1, QColor(51, 103, 214))  # Darker blue
+        
+        painter.setBrush(gradient)
+        painter.setPen(QPen(QColor(41, 98, 204), 2))
+        painter.drawEllipse(4, 4, 56, 56)
+        
+        # Draw question mark in white
+        font = QFont("Arial", 32, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "?")
+        
+        painter.end()
+        return QIcon(pixmap)
 
