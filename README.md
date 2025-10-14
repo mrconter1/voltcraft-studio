@@ -14,18 +14,24 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Click the "Open File" button to browse and select a data file to display.
+Click the folder icon in the toolbar to browse and select a data file to display.
 
 ## Features
 
 - Clean and modern interface with custom icon
+- Compact toolbar with intuitive controls
 - Parses oscilloscope channel metadata (1-4 channels)
 - Displays channel information in a structured table format
 - Supports multiple channels (CH1, CH2, CH3, CH4)
 - Shows parameters: Frequency, Period, PK-PK, Average, Vertical pos, Probe attenuation, etc.
 - Error handling for file operations
 
-## Sample Data
+## Project Structure
 
-A sample data file (`sample_data.txt`) is included for testing.
+- `main.py` - Application entry point
+- `main_window.py` - Main window GUI class
+- `models.py` - Data models (ChannelInfo)
+- `parser.py` - Channel data parser
+- `icons.py` - Icon factory for UI icons
+- `constants.py` - Application constants and configuration
 
