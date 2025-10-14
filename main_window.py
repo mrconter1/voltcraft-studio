@@ -185,7 +185,7 @@ class MainWindow(QMainWindow):
         
         # Create tape measure tool action
         self.tape_action = QAction(IconFactory.create_tape_measure_icon(), "Tape Measure", self)
-        self.tape_action.setToolTip("Measure time between two points")
+        self.tape_action.setToolTip("Measure time and voltage difference between two points")
         self.tape_action.setCheckable(True)
         self.tape_action.triggered.connect(self.select_tape_tool)
         toolbar.addAction(self.tape_action)

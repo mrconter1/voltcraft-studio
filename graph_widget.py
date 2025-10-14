@@ -422,10 +422,27 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Convert to Pint quantity and format with auto-scaling
         time_diff_quantity = time_diff * self.interval_quantity
-        measurement_formatted = format_time_auto(time_diff_quantity, precision=4)
+        time_formatted = format_time_auto(time_diff_quantity, precision=4)
         
-        # Format the measurement text
-        measurement_text = f"Δt = {measurement_formatted}"
+        # Calculate voltage difference
+        voltage_diff = y2 - y1  # Keep sign to show direction
+        voltage_abs = abs(voltage_diff)
+        
+        # Format voltage with appropriate precision
+        # Use scientific notation for very small/large values
+        if voltage_abs < 0.001 or voltage_abs > 10000:
+            voltage_str = f"{voltage_diff:.3e} mV"
+        elif voltage_abs < 1:
+            voltage_str = f"{voltage_diff:.4f} mV"
+        elif voltage_abs < 10:
+            voltage_str = f"{voltage_diff:.3f} mV"
+        elif voltage_abs < 100:
+            voltage_str = f"{voltage_diff:.2f} mV"
+        else:
+            voltage_str = f"{voltage_diff:.1f} mV"
+        
+        # Format the measurement text with both time and voltage
+        measurement_text = f"Δt = {time_formatted}\nΔV = {voltage_str}"
         
         # Create text item for measurement box
         self.tape_text_item = pg.TextItem(

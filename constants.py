@@ -53,7 +53,7 @@ HELP_DIALOG_TEXT = """
 <h3>Tools</h3>
 <p style='margin-left: 20px;'>
 <b>Move Tool</b> - Pan and zoom the graph (default)<br>
-<b>Tape Measure</b> - Click two points to measure time difference
+<b>Tape Measure</b> - Click two points to measure time and voltage difference
 </p>
 
 <h3>Mouse Controls</h3>
