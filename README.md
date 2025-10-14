@@ -16,7 +16,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Click the folder icon in the toolbar to browse and select a data file to display.
+The application will start maximized for optimal data visualization. Click the folder icon in the toolbar to browse and select a data file to display.
 
 ## Features
 

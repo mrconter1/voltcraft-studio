@@ -12,7 +12,7 @@ def main():
     """Application entry point"""
     app = QApplication(sys.argv)
     window = MainWindow()
-    window.show()
+    window.showMaximized()  # Start maximized for better data visualization
     sys.exit(app.exec())
 
 
