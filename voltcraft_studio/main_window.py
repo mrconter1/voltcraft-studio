@@ -65,6 +65,10 @@ class MainWindow(QMainWindow):
                 background-color: #3d3d3d;
             }
         """)
+        # Disable text selection in tabs
+        tab_bar = self.tab_widget.tabBar()
+        tab_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        tab_bar.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         
         # Tab 1: Waveform view (graph only - full screen)
         self.graph_widget = TimeSeriesGraphWidget()
