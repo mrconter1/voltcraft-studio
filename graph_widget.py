@@ -1,13 +1,13 @@
 """Graph widget for displaying time series data"""
 import pyqtgraph as pg
 import numpy as np
-import re
 from typing import List
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from models import TimeSeriesData, ChannelInfo
+from utils import parse_time_interval, format_time_auto, ureg
 
 
 class CustomViewBox(pg.ViewBox):
@@ -101,7 +101,7 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Time interval info for calculations
         self.time_unit = 'samples'
-        self.interval_value = 1.0
+        self.interval_quantity = 1.0 * ureg.dimensionless  # Pint quantity
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -184,33 +184,6 @@ class TimeSeriesGraphWidget(QWidget):
         )
         layout.addWidget(self.info_label)
     
-    def _parse_time_interval(self, time_interval_str: str) -> tuple:
-        """
-        Parse time interval string like '0.20000uS' to value and unit
-        
-        Returns:
-            (value, unit, scale_factor_to_seconds)
-        """
-        # Match number and unit
-        match = re.match(r'([\d.]+)\s*([a-zA-Z]+)', time_interval_str.strip())
-        if not match:
-            return 1.0, 'samples', 1.0
-        
-        value = float(match.group(1))
-        unit = match.group(2)
-        
-        # Convert to standard units and get scale factor
-        unit_map = {
-            's': ('s', 1.0),
-            'ms': ('ms', 1e-3),
-            'us': ('µs', 1e-6),
-            'uS': ('µs', 1e-6),
-            'µs': ('µs', 1e-6),
-            'ns': ('ns', 1e-9),
-        }
-        
-        display_unit, scale = unit_map.get(unit, (unit, 1.0))
-        return value, display_unit, scale
     
     def plot_data(self, time_series_data: TimeSeriesData, channels: List[ChannelInfo] = None):
         """
@@ -239,16 +212,16 @@ class TimeSeriesGraphWidget(QWidget):
         time_values = None
         time_unit = 'samples'
         if channels and len(channels) > 0:
-            # Get time interval from first channel
+            # Get time interval from first channel using Pint
             time_interval_str = channels[0].time_interval
-            interval_value, time_unit, scale = self._parse_time_interval(time_interval_str)
+            interval_value, time_unit, interval_quantity = parse_time_interval(time_interval_str)
             
-            # Store for tape measure tool
+            # Store Pint quantity for calculations
             self.time_unit = time_unit
-            self.interval_value = interval_value
+            self.interval_quantity = interval_quantity
             
             # Calculate actual time array (index * time_interval)
-            # Convert to appropriate unit for display
+            # Keep in original units for now
             time_values = time_series_data.indices * interval_value
             
             # Update X-axis label
@@ -257,7 +230,7 @@ class TimeSeriesGraphWidget(QWidget):
             # Fallback to sample indices
             time_values = time_series_data.indices
             self.time_unit = 'samples'
-            self.interval_value = 1.0
+            self.interval_quantity = 1.0 * ureg.dimensionless
             self.plot_widget.setLabel('bottom', 'Sample Index')
         
         # Plot each channel with ALL data (PyQtGraph will handle downsampling)
@@ -314,10 +287,11 @@ class TimeSeriesGraphWidget(QWidget):
             # Calculate total time duration if we have time info
             duration_str = ""
             if channels and len(channels) > 0:
-                time_interval_str = channels[0].time_interval
-                interval_value, unit, scale = self._parse_time_interval(time_interval_str)
-                total_duration = num_samples * interval_value
-                duration_str = f" | Duration: {total_duration:.3f} {unit}"
+                # Calculate total duration using Pint
+                total_duration_quantity = num_samples * self.interval_quantity
+                # Format with auto-scaling
+                duration_formatted = format_time_auto(total_duration_quantity, precision=4)
+                duration_str = f" | Duration: {duration_formatted}"
             
             self.info_label.setText(
                 f"Loaded {num_samples:,} samples across {num_channels} channel(s){duration_str} | "
@@ -446,8 +420,12 @@ class TimeSeriesGraphWidget(QWidget):
         # Calculate time difference
         time_diff = abs(x2 - x1)
         
+        # Convert to Pint quantity and format with auto-scaling
+        time_diff_quantity = time_diff * self.interval_quantity
+        measurement_formatted = format_time_auto(time_diff_quantity, precision=4)
+        
         # Format the measurement text
-        measurement_text = f"Δt = {time_diff:.4f} {self.time_unit}"
+        measurement_text = f"Δt = {measurement_formatted}"
         
         # Create text item for measurement box
         self.tape_text_item = pg.TextItem(
