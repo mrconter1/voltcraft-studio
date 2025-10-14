@@ -131,23 +131,24 @@ class MainWindow(QMainWindow):
         toolbar.setStyleSheet("""
             QToolBar {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                          stop:0 #f5f5f5, stop:1 #e0e0e0);
-                border-bottom: 1px solid #cccccc;
+                                          stop:0 #2d2d2d, stop:1 #1e1e1e);
+                border-bottom: 1px solid #444444;
                 spacing: 6px;
                 padding: 4px;
             }
             QToolButton {
-                background: white;
-                border: 1px solid #cccccc;
+                background: #3d3d3d;
+                border: 1px solid #555555;
                 border-radius: 4px;
                 padding: 4px;
+                color: #e0e0e0;
             }
             QToolButton:hover {
-                background: #e3f2fd;
-                border: 1px solid #2196f3;
+                background: #4d4d4d;
+                border: 1px solid #6d6d6d;
             }
             QToolButton:pressed {
-                background: #bbdefb;
+                background: #2d2d2d;
             }
         """)
         self.addToolBar(toolbar)
