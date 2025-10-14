@@ -5,53 +5,19 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
     QTabWidget, QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
 from models import ChannelInfo, TimeSeriesData
-from parser import ChannelDataParser
 from icons import IconFactory
 from graph_widget import TimeSeriesGraphWidget
+from loader import FileLoaderThread
 from constants import (
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
-    FILE_DIALOG_TITLE, FILE_DIALOG_FILTER
+    FILE_DIALOG_TITLE, FILE_DIALOG_FILTER,
+    HELP_DIALOG_TEXT
 )
-
-
-class FileLoaderThread(QThread):
-    """Background thread for loading and parsing files"""
-    finished = pyqtSignal(list, object)  # Emits (list of ChannelInfo, TimeSeriesData)
-    error = pyqtSignal(str)  # Emits error message
-    progress = pyqtSignal(int, str)  # Emits (progress percentage, status message)
-    
-    def __init__(self, file_path: str):
-        super().__init__()
-        self.file_path = file_path
-    
-    def run(self):
-        """Load and parse the file in background with streaming"""
-        try:
-            import os
-            
-            self.progress.emit(0, "Opening file...")
-            
-            # Get file size for progress estimation
-            file_size = os.path.getsize(self.file_path)
-            
-            # Parse with progress callback
-            def progress_callback(percent: int, message: str):
-                self.progress.emit(percent, message)
-            
-            channels, time_series = ChannelDataParser.parse_streaming(
-                self.file_path, 
-                progress_callback
-            )
-            
-            self.progress.emit(100, "Complete!")
-            self.finished.emit(channels, time_series)
-        except Exception as e:
-            self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -243,31 +209,10 @@ class MainWindow(QMainWindow):
     
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
-        help_text = """
-<h3>Mouse Controls</h3>
-<p style='margin-left: 20px;'>
-<b>Left Drag</b> - Pan the graph<br>
-<b>Right Drag</b> - Box zoom selection<br>
-<b>Mouse Wheel</b> - Zoom both axes
-</p>
-
-<h3>Keyboard Shortcuts</h3>
-<p style='margin-left: 20px;'>
-<b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
-<b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
-</p>
-
-<h3>Tabs</h3>
-<p style='margin-left: 20px;'>
-<b>Waveform</b> - Interactive oscilloscope graph view<br>
-<b>Channel Info</b> - Detailed metadata for all channels
-</p>
-"""
-        
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Voltcraft Studio - Help")
         msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(help_text)
+        msg_box.setText(HELP_DIALOG_TEXT)
         msg_box.setIcon(QMessageBox.Icon.Information)
         msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
         msg_box.exec()

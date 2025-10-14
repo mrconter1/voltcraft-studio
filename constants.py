@@ -48,3 +48,25 @@ PARSER_PROGRESS_DATA_START = 15  # Progress % when starting data parsing
 PARSER_PROGRESS_DATA_END = 90  # Progress % when data parsing complete
 PARSER_PROGRESS_NUMPY_CONVERSION = 95  # Progress % during numpy conversion
 
+# Help dialog text
+HELP_DIALOG_TEXT = """
+<h3>Mouse Controls</h3>
+<p style='margin-left: 20px;'>
+<b>Left Drag</b> - Pan the graph<br>
+<b>Right Drag</b> - Box zoom selection<br>
+<b>Mouse Wheel</b> - Zoom both axes
+</p>
+
+<h3>Keyboard Shortcuts</h3>
+<p style='margin-left: 20px;'>
+<b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
+<b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
+</p>
+
+<h3>Tabs</h3>
+<p style='margin-left: 20px;'>
+<b>Waveform</b> - Interactive oscilloscope graph view<br>
+<b>Channel Info</b> - Detailed metadata for all channels
+</p>
+"""
+
