@@ -115,57 +115,86 @@ class IconFactory:
     
     @staticmethod
     def create_move_icon() -> QIcon:
-        """Create a move/pan icon (hand cursor)"""
+        """Create a move/pan icon (four-directional arrows)"""
         pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
         pixmap.fill(Qt.GlobalColor.transparent)
         
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Draw hand shape
-        hand_path = QPainterPath()
+        # Center point of the icon
+        center_x = FOLDER_ICON_SIZE // 2  # 32
+        center_y = FOLDER_ICON_SIZE // 2  # 32
         
-        # Palm
-        hand_path.moveTo(20, 40)
-        hand_path.lineTo(20, 50)
-        hand_path.lineTo(35, 50)
-        hand_path.lineTo(35, 40)
+        # Arrow parameters
+        arrow_length = 18  # Length from center to arrow tip
+        arrow_head_size = 7  # Size of arrowhead
+        line_width = 3
         
-        # Fingers
-        # Thumb
-        hand_path.moveTo(20, 40)
-        hand_path.lineTo(15, 35)
-        hand_path.lineTo(15, 25)
-        hand_path.lineTo(20, 25)
-        hand_path.lineTo(20, 40)
-        
-        # Index finger
-        hand_path.moveTo(22, 40)
-        hand_path.lineTo(22, 20)
-        hand_path.lineTo(26, 20)
-        hand_path.lineTo(26, 40)
-        
-        # Middle finger
-        hand_path.moveTo(28, 40)
-        hand_path.lineTo(28, 15)
-        hand_path.lineTo(32, 15)
-        hand_path.lineTo(32, 40)
-        
-        # Ring finger
-        hand_path.moveTo(34, 40)
-        hand_path.lineTo(34, 20)
-        hand_path.lineTo(38, 20)
-        hand_path.lineTo(38, 40)
-        hand_path.lineTo(35, 40)
-        
-        # Fill hand with gray gradient
-        gradient = QLinearGradient(0, 15, 0, 50)
-        gradient.setColorAt(0, QColor(230, 230, 230))
-        gradient.setColorAt(1, QColor(180, 180, 180))
-        
-        painter.setBrush(gradient)
+        # Draw circle in center
+        painter.setBrush(QColor(200, 200, 200))
         painter.setPen(QPen(QColor(100, 100, 100), 2))
-        painter.drawPath(hand_path)
+        painter.drawEllipse(center_x - 4, center_y - 4, 8, 8)
+        
+        # Draw four arrows
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(200, 200, 200))
+        
+        # Up arrow
+        up_arrow = QPainterPath()
+        up_arrow.moveTo(center_x, center_y - arrow_length)  # Tip
+        up_arrow.lineTo(center_x - arrow_head_size, center_y - arrow_length + arrow_head_size)
+        up_arrow.lineTo(center_x - line_width//2, center_y - arrow_length + arrow_head_size)
+        up_arrow.lineTo(center_x - line_width//2, center_y - 6)
+        up_arrow.lineTo(center_x + line_width//2, center_y - 6)
+        up_arrow.lineTo(center_x + line_width//2, center_y - arrow_length + arrow_head_size)
+        up_arrow.lineTo(center_x + arrow_head_size, center_y - arrow_length + arrow_head_size)
+        up_arrow.closeSubpath()
+        painter.drawPath(up_arrow)
+        
+        # Down arrow
+        down_arrow = QPainterPath()
+        down_arrow.moveTo(center_x, center_y + arrow_length)  # Tip
+        down_arrow.lineTo(center_x - arrow_head_size, center_y + arrow_length - arrow_head_size)
+        down_arrow.lineTo(center_x - line_width//2, center_y + arrow_length - arrow_head_size)
+        down_arrow.lineTo(center_x - line_width//2, center_y + 6)
+        down_arrow.lineTo(center_x + line_width//2, center_y + 6)
+        down_arrow.lineTo(center_x + line_width//2, center_y + arrow_length - arrow_head_size)
+        down_arrow.lineTo(center_x + arrow_head_size, center_y + arrow_length - arrow_head_size)
+        down_arrow.closeSubpath()
+        painter.drawPath(down_arrow)
+        
+        # Left arrow
+        left_arrow = QPainterPath()
+        left_arrow.moveTo(center_x - arrow_length, center_y)  # Tip
+        left_arrow.lineTo(center_x - arrow_length + arrow_head_size, center_y - arrow_head_size)
+        left_arrow.lineTo(center_x - arrow_length + arrow_head_size, center_y - line_width//2)
+        left_arrow.lineTo(center_x - 6, center_y - line_width//2)
+        left_arrow.lineTo(center_x - 6, center_y + line_width//2)
+        left_arrow.lineTo(center_x - arrow_length + arrow_head_size, center_y + line_width//2)
+        left_arrow.lineTo(center_x - arrow_length + arrow_head_size, center_y + arrow_head_size)
+        left_arrow.closeSubpath()
+        painter.drawPath(left_arrow)
+        
+        # Right arrow
+        right_arrow = QPainterPath()
+        right_arrow.moveTo(center_x + arrow_length, center_y)  # Tip
+        right_arrow.lineTo(center_x + arrow_length - arrow_head_size, center_y - arrow_head_size)
+        right_arrow.lineTo(center_x + arrow_length - arrow_head_size, center_y - line_width//2)
+        right_arrow.lineTo(center_x + 6, center_y - line_width//2)
+        right_arrow.lineTo(center_x + 6, center_y + line_width//2)
+        right_arrow.lineTo(center_x + arrow_length - arrow_head_size, center_y + line_width//2)
+        right_arrow.lineTo(center_x + arrow_length - arrow_head_size, center_y + arrow_head_size)
+        right_arrow.closeSubpath()
+        painter.drawPath(right_arrow)
+        
+        # Add dark outline to all arrows
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor(80, 80, 80), 1.5))
+        painter.drawPath(up_arrow)
+        painter.drawPath(down_arrow)
+        painter.drawPath(left_arrow)
+        painter.drawPath(right_arrow)
         
         painter.end()
         return QIcon(pixmap)
