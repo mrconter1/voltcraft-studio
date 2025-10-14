@@ -4,7 +4,7 @@ import numpy as np
 from typing import List
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QCursor
 
 from .models import TimeSeriesData, ChannelInfo
 from .utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
@@ -185,6 +185,7 @@ class CustomViewBox(pg.ViewBox):
         # Enable mouse interaction for both axes
         self.setMouseEnabled(x=True, y=True)
         self.tape_measure_mode = False  # Flag for tape measure mode
+        self.is_dragging = False  # Track drag state for cursor changes
     
     def wheelEvent(self, ev, axis=None):
         """
@@ -228,10 +229,20 @@ class CustomViewBox(pg.ViewBox):
         ev.accept()
     
     def mouseDragEvent(self, ev, axis=None):
-        """Block drag events in tape measure mode"""
+        """Block drag events in tape measure mode, handle cursor changes for move tool"""
         if self.tape_measure_mode:
             ev.ignore()
             return
+        
+        # Change cursor to closed hand when dragging starts
+        if ev.isStart():
+            self.is_dragging = True
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        elif ev.isFinish():
+            self.is_dragging = False
+            # Restore to open hand cursor
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        
         super().mouseDragEvent(ev, axis=axis)
     
     def mouseClickEvent(self, ev):
@@ -526,6 +537,10 @@ class TimeSeriesGraphWidget(QWidget):
                 view_box.tape_measure_mode = False
                 view_box.setMouseEnabled(x=True, y=True)
                 view_box.setMouseMode(pg.ViewBox.PanMode)
+                # Set open hand cursor for move tool
+                view_box.setCursor(Qt.CursorShape.OpenHandCursor)
+            # Set cursor on plot widget as well
+            self.plot_widget.setCursor(Qt.CursorShape.OpenHandCursor)
             # Clear any existing tape measure
             self._clear_tape_measure()
         elif tool == "tape":
@@ -533,6 +548,10 @@ class TimeSeriesGraphWidget(QWidget):
             if view_box:
                 view_box.tape_measure_mode = True
                 view_box.rbScaleBox.hide()  # Hide the scale box if visible
+                # Set crosshair cursor for tape measure tool
+                view_box.setCursor(Qt.CursorShape.CrossCursor)
+            # Set cursor on plot widget as well
+            self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
     
     def _on_mouse_clicked(self, event):
         """Handle mouse click events for tape measure tool"""
