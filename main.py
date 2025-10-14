@@ -6,7 +6,7 @@ A GUI application for viewing and analyzing oscilloscope channel data.
 import sys
 import argparse
 from PyQt6.QtWidgets import QApplication
-from main_window import MainWindow
+from voltcraft_studio.main_window import MainWindow
 
 
 def main():

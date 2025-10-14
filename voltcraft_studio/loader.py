@@ -1,6 +1,6 @@
 """Background file loader thread for Voltcraft Studio"""
 from PyQt6.QtCore import QThread, pyqtSignal
-from parser import ChannelDataParser
+from .parser import ChannelDataParser
 
 
 class FileLoaderThread(QThread):

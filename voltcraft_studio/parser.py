@@ -1,8 +1,8 @@
 """Parser for oscilloscope channel data files"""
 from typing import List, Tuple, Callable, Optional
 import numpy as np
-from models import ChannelInfo, TimeSeriesData
-from constants import (
+from .models import ChannelInfo, TimeSeriesData
+from .constants import (
     PARSER_BATCH_SIZE,
     PARSER_PROGRESS_METADATA_START,
     PARSER_PROGRESS_METADATA_DONE,

@@ -8,11 +8,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 
-from models import ChannelInfo, TimeSeriesData
-from icons import IconFactory
-from graph_widget import TimeSeriesGraphWidget
-from loader import FileLoaderThread
-from constants import (
+from .models import ChannelInfo, TimeSeriesData
+from .icons import IconFactory
+from .graph_widget import TimeSeriesGraphWidget
+from .loader import FileLoaderThread
+from .constants import (
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
     FILE_DIALOG_TITLE, FILE_DIALOG_FILTER,

@@ -4,7 +4,7 @@ from PyQt6.QtGui import (
     QIcon, QPixmap, QPainter, QColor, QFont, 
     QPen, QPainterPath, QLinearGradient
 )
-from constants import (
+from .constants import (
     COLOR_GOLD, COLOR_DARK_GOLD, COLOR_DARKER_GOLD,
     COLOR_BLACK, WINDOW_ICON_SIZE, FOLDER_ICON_SIZE
 )

@@ -16,6 +16,7 @@ a = Analysis(
         'OpenGL',
         'OpenGL.platform.win32',
         'pint',
+        'voltcraft_studio',
     ],
     hookspath=[],
     hooksconfig={},

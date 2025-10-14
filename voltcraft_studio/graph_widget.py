@@ -6,8 +6,8 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgress
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from models import TimeSeriesData, ChannelInfo
-from utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
+from .models import TimeSeriesData, ChannelInfo
+from .utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
 
 
 class DynamicVoltageAxisItem(pg.AxisItem):

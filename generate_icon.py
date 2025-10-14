@@ -3,7 +3,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPixmap, QPainter, QColor
 from PyQt6.QtCore import Qt
-from icons import IconFactory
+from voltcraft_studio.icons import IconFactory
 
 def generate_icon():
     """Generate and save multi-resolution icon.ico file"""
