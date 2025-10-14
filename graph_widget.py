@@ -10,6 +10,79 @@ from models import TimeSeriesData, ChannelInfo
 from utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
 
 
+class DynamicVoltageAxisItem(pg.AxisItem):
+    """Axis that dynamically adjusts voltage units based on visible range"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.parent_plot_widget = None
+        
+    def set_parent_plot_widget(self, plot_widget):
+        """Set reference to parent plot widget to access view range"""
+        self.parent_plot_widget = plot_widget
+    
+    def tickStrings(self, values, scale, spacing):
+        """Override tick string formatting with dynamic voltage unit selection"""
+        if self.parent_plot_widget is None or len(values) == 0:
+            return super().tickStrings(values, scale, spacing)
+        
+        # Get the absolute values to determine unit
+        abs_values = [abs(v) for v in values if v != 0]
+        if not abs_values:
+            abs_values = [abs(v) for v in values]
+        
+        if not abs_values:
+            return super().tickStrings(values, scale, spacing)
+        
+        # Find typical magnitude
+        max_val = max(abs_values)
+        min_val = min(abs_values) if min(abs_values) > 0 else max_val
+        avg_magnitude = (max_val + min_val) / 2
+        
+        # Determine best unit (µV, mV, or V)
+        if avg_magnitude < 1:
+            best_unit = 'µV'
+            scale_factor = 1000  # mV to µV
+        elif avg_magnitude < 1000:
+            best_unit = 'mV'
+            scale_factor = 1
+        else:
+            best_unit = 'V'
+            scale_factor = 0.001  # mV to V
+        
+        # Calculate tick spacing to determine precision
+        if len(values) >= 2:
+            spacing_magnitude = abs(values[1] - values[0]) * scale_factor
+            
+            if spacing_magnitude < 0.0001:
+                decimal_places = 5
+            elif spacing_magnitude < 0.001:
+                decimal_places = 4
+            elif spacing_magnitude < 0.01:
+                decimal_places = 3
+            elif spacing_magnitude < 0.1:
+                decimal_places = 2
+            elif spacing_magnitude < 1:
+                decimal_places = 2
+            elif spacing_magnitude < 10:
+                decimal_places = 1
+            else:
+                decimal_places = 0
+        else:
+            decimal_places = 2
+        
+        # Format all tick values with unit suffix
+        strings = []
+        for value in values:
+            try:
+                magnitude = value * scale_factor
+                strings.append(f"{magnitude:.{decimal_places}f} {best_unit}")
+            except Exception:
+                strings.append(f"{value:.3g}")
+        
+        return strings
+
+
 class DynamicTimeAxisItem(pg.AxisItem):
     """Axis that dynamically adjusts time units based on visible range"""
     
@@ -205,20 +278,22 @@ class TimeSeriesGraphWidget(QWidget):
         # Create plot widget with dark theme and custom ViewBox
         pg.setConfigOptions(antialias=True)
         
-        # Create custom time axis with dynamic unit scaling
+        # Create custom axes with dynamic unit scaling
         self.time_axis = DynamicTimeAxisItem(orientation='bottom')
+        self.voltage_axis = DynamicVoltageAxisItem(orientation='left')
         
         # Create custom ViewBox for independent axis control
         view_box = CustomViewBox()
         
-        # Create plot widget with custom axis and viewbox
+        # Create plot widget with custom axes and viewbox
         self.plot_widget = pg.PlotWidget(
             viewBox=view_box,
-            axisItems={'bottom': self.time_axis}
+            axisItems={'bottom': self.time_axis, 'left': self.voltage_axis}
         )
         
-        # Set reference to plot widget in axis for range detection
+        # Set reference to plot widget in axes for range detection
         self.time_axis.set_parent_plot_widget(self.plot_widget)
+        self.voltage_axis.set_parent_plot_widget(self.plot_widget)
         
         # Enable OpenGL for GPU acceleration (much faster for large datasets)
         try:
@@ -233,15 +308,15 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Set axis colors for dark mode
         axis_color = '#cccccc'
-        self.plot_widget.getAxis('left').setPen(axis_color)
-        self.plot_widget.getAxis('left').setTextPen(axis_color)
-        # Custom time axis styling
+        # Custom axes styling
+        self.voltage_axis.setPen(axis_color)
+        self.voltage_axis.setTextPen(axis_color)
         self.time_axis.setPen(axis_color)
         self.time_axis.setTextPen(axis_color)
         
-        # Labels with light color
+        # Labels with light color (just axis names, units shown on ticks)
         label_style = {'color': '#cccccc', 'font-size': '12pt'}
-        self.plot_widget.setLabel('left', 'Voltage', units='mV', **label_style)
+        self.plot_widget.setLabel('left', 'Voltage', **label_style)
         self.plot_widget.setLabel('bottom', 'Time', **label_style)
         self.plot_widget.setTitle('Oscilloscope Waveform', color='#cccccc', size='14pt')
         
