@@ -1,1 +1,13 @@
 __pycache__/*
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+*.exe
+
+# Generated icon
+icon.ico
+
+# PyInstaller cache
+*.pyc

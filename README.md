@@ -1,22 +1,33 @@
 # Voltcraft Studio
 
-A GUI application built with PyQt6 to open and display oscilloscope channel data files.
+A GPU-accelerated oscilloscope data viewer with advanced visualization features.
 
-## Installation
+## 🚀 Quick Start
+
+### Option 1: Download Portable Executable (Windows)
+Download the latest `VoltcraftStudio.exe` from the [Releases page](https://github.com/mrconter1/voltcraft-studio/releases) - no installation required!
 
 ```bash
+# Run directly
+VoltcraftStudio.exe
+
+# Or load a file on startup
+VoltcraftStudio.exe "path\to\your\data.txt"
+```
+
+### Option 2: Run from Source
+```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Run the application
+python main.py
+
+# Or load a file on startup
+python main.py "path\to\your\data.txt"
 ```
 
 **Note:** For optimal performance with large datasets (millions of points), the application uses OpenGL GPU acceleration. If you experience issues, OpenGL will be automatically disabled and fallback to CPU rendering.
-
-## Usage
-
-```bash
-python main.py
-```
-
-The application will start maximized for optimal data visualization. Click the folder icon in the toolbar to browse and select a data file to display.
 
 ## Features
 
@@ -48,16 +59,31 @@ The application will start maximized for optimal data visualization. Click the f
 ## Project Structure
 
 - `main.py` - Application entry point
-- `main_window.py` - Main window GUI class with file loading
-- `graph_widget.py` - Time series graph widget using pyqtgraph
+- `main_window.py` - Main window GUI class
+- `graph_widget.py` - Time series graph widget with custom controls
+- `loader.py` - Background file loading thread
+- `parser.py` - Streaming data parser with progress tracking
 - `models.py` - Data models (ChannelInfo, TimeSeriesData)
-- `parser.py` - Channel data and time series parser
 - `icons.py` - Icon factory for UI icons
 - `constants.py` - Application constants and configuration
+- `build.spec` - PyInstaller configuration for building .exe
 
 ## Dependencies
 
 - PyQt6 - GUI framework
 - pyqtgraph - High-performance plotting library
 - numpy - Numerical array processing
+- PyOpenGL - GPU acceleration (optional)
+
+## Building
+
+To create a portable .exe or set up automated builds, see [BUILD.md](BUILD.md)
+
+**Quick build:**
+```bash
+python generate_icon.py
+pyinstaller --clean --noconfirm build.spec
+```
+
+The executable will be in `dist/VoltcraftStudio.exe`
 
