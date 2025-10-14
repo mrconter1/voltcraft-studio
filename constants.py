@@ -66,6 +66,8 @@ HELP_DIALOG_TEXT = """
 
 <h3>Keyboard Shortcuts</h3>
 <p style='margin-left: 20px;'>
+<b>1</b> - Switch to Move tool<br>
+<b>2</b> - Switch to Tape Measure tool<br>
 <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
 <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
 </p>

@@ -177,16 +177,18 @@ class MainWindow(QMainWindow):
         
         # Create move tool action
         self.move_action = QAction(IconFactory.create_move_icon(), "Move Tool", self)
-        self.move_action.setToolTip("Pan and zoom the graph (default)")
+        self.move_action.setToolTip("Pan and zoom the graph (default) [Shortcut: 1]")
         self.move_action.setCheckable(True)
         self.move_action.setChecked(True)  # Default tool
+        self.move_action.setShortcut("1")
         self.move_action.triggered.connect(self.select_move_tool)
         toolbar.addAction(self.move_action)
         
         # Create tape measure tool action
         self.tape_action = QAction(IconFactory.create_tape_measure_icon(), "Tape Measure", self)
-        self.tape_action.setToolTip("Measure time and voltage difference between two points")
+        self.tape_action.setToolTip("Measure time and voltage difference between two points [Shortcut: 2]")
         self.tape_action.setCheckable(True)
+        self.tape_action.setShortcut("2")
         self.tape_action.triggered.connect(self.select_tape_tool)
         toolbar.addAction(self.tape_action)
         
