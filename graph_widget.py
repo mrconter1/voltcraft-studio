@@ -7,7 +7,101 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
 from models import TimeSeriesData, ChannelInfo
-from utils import parse_time_interval, format_time_auto, ureg
+from utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
+
+
+class DynamicTimeAxisItem(pg.AxisItem):
+    """Axis that dynamically adjusts time units based on visible range"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.interval_quantity = 1.0 * ureg.dimensionless
+        self.is_time_axis = False
+        self.parent_plot_widget = None
+        self.current_unit = 's'
+        
+    def set_time_interval(self, interval_quantity):
+        """Set the time interval for this axis"""
+        self.interval_quantity = interval_quantity
+        self.is_time_axis = True
+    
+    def set_parent_plot_widget(self, plot_widget):
+        """Set reference to parent plot widget to access view range"""
+        self.parent_plot_widget = plot_widget
+    
+    def disable_time_formatting(self):
+        """Disable time formatting (for sample indices)"""
+        self.is_time_axis = False
+    
+    def tickStrings(self, values, scale, spacing):
+        """Override tick string formatting with dynamic unit selection"""
+        if not self.is_time_axis or self.parent_plot_widget is None or len(values) == 0:
+            # Use default formatting for non-time axes
+            return super().tickStrings(values, scale, spacing)
+        
+        # Convert all tick values to seconds to find the best unit
+        time_values_seconds = []
+        for value in values:
+            try:
+                time_quantity = value * self.interval_quantity
+                time_seconds = time_quantity.to(ureg.second).magnitude
+                time_values_seconds.append(abs(time_seconds))
+            except Exception:
+                pass
+        
+        if not time_values_seconds:
+            return super().tickStrings(values, scale, spacing)
+        
+        # Find the range of values being displayed
+        max_time = max(time_values_seconds)
+        min_time = min(time_values_seconds) if min(time_values_seconds) > 0 else max_time
+        
+        # Determine best unit based on the typical magnitude of values
+        # We want numbers to be in the range 0.1 - 999 for readability
+        avg_magnitude = (max_time + min_time) / 2
+        best_unit = get_best_time_unit_for_range(avg_magnitude)
+        self.current_unit = best_unit
+        
+        # Calculate tick spacing in the chosen unit to determine precision
+        if len(values) >= 2:
+            # Convert first two values to get spacing
+            val1_qty = values[0] * self.interval_quantity
+            val2_qty = values[1] * self.interval_quantity
+            spacing_magnitude = abs(convert_time_to_unit(val2_qty - val1_qty, best_unit))
+            
+            # Determine decimal places needed to show the spacing
+            if spacing_magnitude < 0.0001:
+                decimal_places = 5
+            elif spacing_magnitude < 0.001:
+                decimal_places = 4
+            elif spacing_magnitude < 0.01:
+                decimal_places = 3
+            elif spacing_magnitude < 0.1:
+                decimal_places = 2
+            elif spacing_magnitude < 1:
+                decimal_places = 2
+            elif spacing_magnitude < 10:
+                decimal_places = 1
+            else:
+                decimal_places = 0
+        else:
+            decimal_places = 2
+        
+        # Format all tick values in the chosen unit with unit suffix
+        strings = []
+        for value in values:
+            try:
+                # Convert value to time quantity
+                time_quantity = value * self.interval_quantity
+                # Convert to the chosen unit
+                magnitude = convert_time_to_unit(time_quantity, best_unit)
+                # Format with calculated precision and unit suffix
+                strings.append(f"{magnitude:.{decimal_places}f} {best_unit}")
+            except Exception:
+                # Fallback to default if formatting fails
+                strings.append(f"{value:.3g}")
+        
+        return strings
 
 
 class CustomViewBox(pg.ViewBox):
@@ -111,9 +205,20 @@ class TimeSeriesGraphWidget(QWidget):
         # Create plot widget with dark theme and custom ViewBox
         pg.setConfigOptions(antialias=True)
         
+        # Create custom time axis with dynamic unit scaling
+        self.time_axis = DynamicTimeAxisItem(orientation='bottom')
+        
         # Create custom ViewBox for independent axis control
         view_box = CustomViewBox()
-        self.plot_widget = pg.PlotWidget(viewBox=view_box)
+        
+        # Create plot widget with custom axis and viewbox
+        self.plot_widget = pg.PlotWidget(
+            viewBox=view_box,
+            axisItems={'bottom': self.time_axis}
+        )
+        
+        # Set reference to plot widget in axis for range detection
+        self.time_axis.set_parent_plot_widget(self.plot_widget)
         
         # Enable OpenGL for GPU acceleration (much faster for large datasets)
         try:
@@ -130,8 +235,9 @@ class TimeSeriesGraphWidget(QWidget):
         axis_color = '#cccccc'
         self.plot_widget.getAxis('left').setPen(axis_color)
         self.plot_widget.getAxis('left').setTextPen(axis_color)
-        self.plot_widget.getAxis('bottom').setPen(axis_color)
-        self.plot_widget.getAxis('bottom').setTextPen(axis_color)
+        # Custom time axis styling
+        self.time_axis.setPen(axis_color)
+        self.time_axis.setTextPen(axis_color)
         
         # Labels with light color
         label_style = {'color': '#cccccc', 'font-size': '12pt'}
@@ -220,17 +326,23 @@ class TimeSeriesGraphWidget(QWidget):
             self.time_unit = time_unit
             self.interval_quantity = interval_quantity
             
+            # Configure the time axis for dynamic unit scaling
+            self.time_axis.set_time_interval(interval_quantity)
+            
             # Calculate actual time array (index * time_interval)
             # Keep in original units for now
             time_values = time_series_data.indices * interval_value
             
-            # Update X-axis label
-            self.plot_widget.setLabel('bottom', f'Time ({time_unit})')
+            # Set X-axis label (just "Time" - units shown on tick values)
+            self.plot_widget.setLabel('bottom', 'Time')
         else:
             # Fallback to sample indices
             time_values = time_series_data.indices
             self.time_unit = 'samples'
             self.interval_quantity = 1.0 * ureg.dimensionless
+            
+            # Disable dynamic time formatting for sample indices
+            self.time_axis.disable_time_formatting()
             self.plot_widget.setLabel('bottom', 'Sample Index')
         
         # Plot each channel with ALL data (PyQtGraph will handle downsampling)
