@@ -3,10 +3,10 @@ from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QTabWidget, QMessageBox
+    QTabWidget, QMessageBox, QLabel, QApplication
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 
 from .models import ChannelInfo, TimeSeriesData
 from .icons import IconFactory
@@ -80,10 +80,26 @@ class MainWindow(QMainWindow):
         channel_info_layout.setContentsMargins(10, 10, 10, 10)
         
         self.channel_table = QTableWidget()
+        # Completely disable all editing triggers
         self.channel_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        
+        # Prevent items from getting focus (prevents text selection within cells)
+        self.channel_table.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        
         self.channel_table.verticalHeader().setVisible(True)
         self.channel_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.channel_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        
+        # Enable cell selection (can select multiple cells)
+        self.channel_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        self.channel_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        
+        # Allow selecting rows/columns by clicking headers
+        self.channel_table.horizontalHeader().setSectionsClickable(True)
+        self.channel_table.verticalHeader().setSectionsClickable(True)
+        self.channel_table.horizontalHeader().setHighlightSections(True)
+        self.channel_table.verticalHeader().setHighlightSections(True)
+        
         self.channel_table.setStyleSheet("""
             QTableWidget {
                 background-color: #2d2d2d;
@@ -95,9 +111,20 @@ class MainWindow(QMainWindow):
             QTableWidget::item {
                 padding: 8px;
                 border: none;
+                outline: none;
+            }
+            QTableWidget::item:focus {
+                outline: none;
+                border: none;
             }
             QTableWidget::item:selected {
-                background-color: #404040;
+                background-color: #5a7fa8;
+                outline: none;
+            }
+            QTableWidget::item:selected:focus {
+                background-color: #5a7fa8;
+                outline: none;
+                border: none;
             }
             QHeaderView::section {
                 background-color: #1e1e1e;
@@ -107,14 +134,45 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
                 font-size: 11pt;
             }
+            QHeaderView::section:hover {
+                background-color: #3d3d3d;
+                cursor: pointer;
+            }
+            QHeaderView::section:checked {
+                background-color: #4a5f7f;
+            }
             QTableView QTableCornerButton::section {
                 background-color: #1e1e1e;
                 border: 1px solid #444444;
             }
         """)
+        
+        # Add keyboard shortcut for copying
+        copy_shortcut = QShortcut(QKeySequence.StandardKey.Copy, self.channel_table)
+        copy_shortcut.activated.connect(self._copy_table_selection)
+        
         channel_info_layout.addWidget(self.channel_table)
         
+        # Status label to show copy confirmation
+        self.copy_status_label = QLabel("")
+        self.copy_status_label.setStyleSheet("""
+            QLabel {
+                padding: 4px 8px;
+                background-color: #2d2d2d;
+                color: #4CAF50;
+                font-size: 10pt;
+                font-weight: bold;
+                border-top: 1px solid #444444;
+            }
+        """)
+        self.copy_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.copy_status_label.hide()
+        channel_info_layout.addWidget(self.copy_status_label)
+        
         self.tab_widget.addTab(channel_info_widget, "📊 Channel Info")
+        
+        # Connect to tab change event to clear selection
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
         
         layout.addWidget(self.tab_widget)
         
@@ -208,6 +266,128 @@ class MainWindow(QMainWindow):
         help_action.triggered.connect(self.show_help)
         toolbar.addAction(help_action)
     
+    def _on_tab_changed(self, index):
+        """Handle tab change event"""
+        # Check if we switched to the Channel Info tab (index 1)
+        if index == 1:  # Channel Info tab
+            # Clear selection when entering the tab
+            self.channel_table.clearSelection()
+            # Also hide any copy status message
+            self.copy_status_label.hide()
+    
+    def _copy_table_selection(self):
+        """Copy selected cells from channel table to clipboard, including headers if selected"""
+        # Get selected ranges
+        selected_ranges = self.channel_table.selectedRanges()
+        
+        if not selected_ranges:
+            # Nothing selected
+            return
+        
+        # Build a 2D array of selected cells
+        # We need to handle potentially non-contiguous selections
+        rows_data = {}
+        min_row = float('inf')
+        max_row = float('-inf')
+        min_col = float('inf')
+        max_col = float('-inf')
+        
+        for selected_range in selected_ranges:
+            for row in range(selected_range.topRow(), selected_range.bottomRow() + 1):
+                if row not in rows_data:
+                    rows_data[row] = {}
+                for col in range(selected_range.leftColumn(), selected_range.rightColumn() + 1):
+                    item = self.channel_table.item(row, col)
+                    rows_data[row][col] = item.text() if item else ""
+                    # Track the bounds
+                    min_row = min(min_row, row)
+                    max_row = max(max_row, row)
+                    min_col = min(min_col, col)
+                    max_col = max(max_col, col)
+        
+        if not rows_data:
+            return
+        
+        # Check if entire rows or columns are selected
+        total_rows = self.channel_table.rowCount()
+        total_cols = self.channel_table.columnCount()
+        
+        # Determine if we should include headers
+        include_row_headers = False
+        include_col_headers = False
+        
+        # Check if entire rows are selected (all columns in those rows)
+        for row in rows_data:
+            if len(rows_data[row]) == total_cols:
+                include_row_headers = True
+                break
+        
+        # Check if entire columns are selected (all rows in those columns)
+        cols_with_all_rows = set()
+        for row in rows_data:
+            for col in rows_data[row]:
+                cols_with_all_rows.add(col)
+        
+        # A column has all rows if it appears in all selected rows
+        if len(rows_data) == total_rows:
+            include_col_headers = True
+        
+        # Build the output
+        lines = []
+        
+        # Add column headers if needed
+        if include_col_headers:
+            header_line = []
+            if include_row_headers:
+                header_line.append("")  # Empty cell for top-left corner
+            
+            for col in range(min_col, max_col + 1):
+                # Check if this column has any selected cells
+                has_data = any(col in rows_data.get(row, {}) for row in rows_data)
+                if has_data:
+                    header_text = self.channel_table.horizontalHeaderItem(col)
+                    header_line.append(header_text.text() if header_text else f"Col{col}")
+            
+            if header_line and (not include_row_headers or len(header_line) > 1):
+                lines.append("\t".join(header_line))
+        
+        # Add data rows
+        for row in sorted(rows_data.keys()):
+            cols_in_row = rows_data[row]
+            if not cols_in_row:
+                continue
+            
+            line_data = []
+            
+            # Add row header if needed
+            if include_row_headers:
+                header_text = self.channel_table.verticalHeaderItem(row)
+                line_data.append(header_text.text() if header_text else f"Row{row}")
+            
+            # Add cell data
+            row_min_col = min(cols_in_row.keys())
+            row_max_col = max(cols_in_row.keys())
+            for col in range(row_min_col, row_max_col + 1):
+                line_data.append(cols_in_row.get(col, ""))
+            
+            lines.append("\t".join(line_data))
+        
+        # Copy to clipboard
+        clipboard_text = "\n".join(lines)
+        clipboard = QApplication.clipboard()
+        clipboard.setText(clipboard_text)
+        
+        # Show confirmation message
+        num_cells = sum(len(cols) for cols in rows_data.values())
+        header_info = ""
+        if include_col_headers or include_row_headers:
+            header_info = " with headers"
+        self.copy_status_label.setText(f"✓ Copied {num_cells} cell(s){header_info} to clipboard")
+        self.copy_status_label.show()
+        
+        # Hide message after 2 seconds
+        QTimer.singleShot(2000, self.copy_status_label.hide)
+    
     def display_channel_info(self, channels: List[ChannelInfo]):
         """Display channel information in table"""
         if not channels:
@@ -229,6 +409,8 @@ class MainWindow(QMainWindow):
                 value = getattr(channel, attr)
                 item = QTableWidgetItem(value)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Make item selectable but not editable (prevents text selection within cells)
+                item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 self.channel_table.setItem(row, col, item)
         
         # Resize to fit content

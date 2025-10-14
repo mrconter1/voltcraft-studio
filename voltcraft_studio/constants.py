@@ -69,6 +69,7 @@ HELP_DIALOG_TEXT = """
 <p style='margin-left: 20px;'>
 <b>1</b> - Switch to Move tool<br>
 <b>2</b> - Switch to Tape Measure tool<br>
+<b>Ctrl + C</b> - Copy selected cells (Channel Info tab)<br>
 <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
 <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
 </p>
@@ -85,6 +86,15 @@ HELP_DIALOG_TEXT = """
 <p style='margin-left: 20px;'>
 <b>Waveform</b> - Interactive oscilloscope graph view<br>
 <b>Channel Info</b> - Detailed metadata for all channels
+</p>
+
+<h3>Channel Info Table</h3>
+<p style='margin-left: 20px;'>
+• Click cells to select data<br>
+• Click column headers to select entire columns<br>
+• Click row headers to select entire rows<br>
+• Press Ctrl+C to copy (includes headers when rows/columns selected)<br>
+• Paste into Excel, Google Sheets, or any text editor
 </p>
 """
 
