@@ -3,8 +3,8 @@ import pyqtgraph as pg
 import numpy as np
 from typing import List
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QCursor
+from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtGui import QColor, QCursor, QMouseEvent
 
 from .models import TimeSeriesData, ChannelInfo
 from .utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
@@ -276,6 +276,8 @@ class TimeSeriesGraphWidget(QWidget):
         self.tape_line = None    # Visual line between points
         self.tape_markers = []   # Visual markers at click points
         self.tape_text_item = None  # Text box showing measurement
+        self.is_dragging_tape = False  # Track if we're dragging to set point 2
+        self.mouse_is_pressed = False  # Track if mouse button is currently held down
         
         # Time interval info for calculations
         self.time_unit = 'samples'
@@ -335,8 +337,14 @@ class TimeSeriesGraphWidget(QWidget):
         self.plot_widget.enableAutoRange()
         self.plot_widget.setMouseEnabled(x=True, y=True)
         
-        # Connect mouse click events to the plot widget's scene
+        # Connect mouse events to the plot widget's scene
         self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
+        
+        # Connect to mouse press and move events for dynamic tape measure
+        self.plot_widget.scene().sigMouseMoved.connect(self._on_mouse_moved)
+        
+        # Install event filter to catch mouse press/release for tape measure
+        self.plot_widget.viewport().installEventFilter(self)
         
         # Legend will be created when data is loaded
         self.legend = None
@@ -525,6 +533,43 @@ class TimeSeriesGraphWidget(QWidget):
         """Hide the progress bar"""
         self.progress_bar.hide()
     
+    def eventFilter(self, obj, event):
+        """Event filter to catch mouse press/release for tape measure"""
+        if self.current_tool == "tape" and obj == self.plot_widget.viewport():
+            if event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._on_mouse_press(event)
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._on_mouse_release(event)
+        
+        # Always pass the event to the parent
+        return super().eventFilter(obj, event)
+    
+    def _on_mouse_press(self, event):
+        """Handle mouse button press for tape measure"""
+        if self.current_tool != "tape":
+            return
+        
+        # Mark that mouse is pressed
+        self.mouse_is_pressed = True
+        
+        # If we already have first point but no second point, start dragging
+        if self.tape_point1 is not None and self.tape_point2 is None:
+            self.is_dragging_tape = True
+    
+    def _on_mouse_release(self, event):
+        """Handle mouse button release for tape measure"""
+        if self.current_tool != "tape":
+            return
+        
+        # Mark that mouse is released
+        self.mouse_is_pressed = False
+        
+        # If we were dragging, stop dragging (finalize second point)
+        if self.is_dragging_tape:
+            self.is_dragging_tape = False
+    
     def set_tool(self, tool: str):
         """Set the current tool (move or tape)"""
         self.current_tool = tool
@@ -541,7 +586,7 @@ class TimeSeriesGraphWidget(QWidget):
                 view_box.setCursor(Qt.CursorShape.OpenHandCursor)
             # Set cursor on plot widget as well
             self.plot_widget.setCursor(Qt.CursorShape.OpenHandCursor)
-            # Clear any existing tape measure
+            # Clear any existing tape measure and reset dragging state
             self._clear_tape_measure()
         elif tool == "tape":
             # Enable tape measure mode to block ViewBox events
@@ -552,6 +597,9 @@ class TimeSeriesGraphWidget(QWidget):
                 view_box.setCursor(Qt.CursorShape.CrossCursor)
             # Set cursor on plot widget as well
             self.plot_widget.setCursor(Qt.CursorShape.CrossCursor)
+            # Make sure dragging state is reset when switching to tape tool
+            self.is_dragging_tape = False
+            self.mouse_is_pressed = False
     
     def _on_mouse_clicked(self, event):
         """Handle mouse click events for tape measure tool"""
@@ -578,21 +626,69 @@ class TimeSeriesGraphWidget(QWidget):
         x_pos = data_pos.x()
         y_pos = data_pos.y()
         
-        # Handle first or second click
+        # Handle mouse click (button up)
+        if event.double():
+            # Double click - ignore for now
+            return
+        
+        # Single click - determine what to do based on current state
         if self.tape_point1 is None:
-            # First click - set first point
+            # First click - set first point, but don't start dragging yet
+            # Dragging will start on the next mouse press
             self.tape_point1 = (x_pos, y_pos)
             self._draw_tape_marker(x_pos, y_pos, is_first=True)
-        elif self.tape_point2 is None:
-            # Second click - set second point and draw measurement
+        elif self.tape_point1 is not None and self.tape_point2 is None and not self.is_dragging_tape:
+            # Second click without drag - place second point immediately
             self.tape_point2 = (x_pos, y_pos)
             self._draw_tape_marker(x_pos, y_pos, is_first=False)
             self._draw_tape_measurement()
-        else:
-            # Third click - clear and start over
+        elif self.tape_point2 is not None and not self.is_dragging_tape:
+            # Already have both fixed points - this is third click, clear and start over
             self._clear_tape_measure()
             self.tape_point1 = (x_pos, y_pos)
             self._draw_tape_marker(x_pos, y_pos, is_first=True)
+    
+    def _on_mouse_moved(self, pos):
+        """Handle mouse move events for dynamic tape measure"""
+        if self.current_tool != "tape":
+            return
+        
+        # Only update if we're actively dragging (button pressed and dragging mode)
+        if not self.is_dragging_tape or not self.mouse_is_pressed or self.tape_point1 is None:
+            return
+        
+        # Get the scene position
+        scene_pos = pos
+        
+        # Map scene position to data coordinates
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        # Convert scene coordinates to data coordinates
+        data_pos = view_box.mapSceneToView(scene_pos)
+        x_pos = data_pos.x()
+        y_pos = data_pos.y()
+        
+        # Update second point dynamically
+        self.tape_point2 = (x_pos, y_pos)
+        
+        # Clear previous second marker, line, and text (but keep first marker)
+        if len(self.tape_markers) > 1:
+            self.plot_widget.removeItem(self.tape_markers[1])
+            self.tape_markers.pop()
+        
+        if self.tape_line is not None:
+            self.plot_widget.removeItem(self.tape_line)
+            self.tape_line = None
+        
+        if self.tape_text_item is not None:
+            self.plot_widget.removeItem(self.tape_text_item)
+            self.tape_text_item = None
+        
+        # Draw new marker and measurement
+        self._draw_tape_marker(x_pos, y_pos, is_first=False)
+        self._draw_tape_measurement()
     
     def _draw_tape_marker(self, x: float, y: float, is_first: bool):
         """Draw a marker at the clicked point"""
@@ -683,7 +779,9 @@ class TimeSeriesGraphWidget(QWidget):
             self.plot_widget.removeItem(self.tape_text_item)
             self.tape_text_item = None
         
-        # Reset points
+        # Reset points and dragging state
         self.tape_point1 = None
         self.tape_point2 = None
+        self.is_dragging_tape = False
+        self.mouse_is_pressed = False
 

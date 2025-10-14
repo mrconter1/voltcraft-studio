@@ -53,13 +53,14 @@ HELP_DIALOG_TEXT = """
 <h3>Tools</h3>
 <p style='margin-left: 20px;'>
 <b>Move Tool</b> - Pan and zoom the graph (default)<br>
-<b>Tape Measure</b> - Click two points to measure time and voltage difference
+<b>Tape Measure</b> - Measure time and voltage difference between two points
 </p>
 
 <h3>Mouse Controls</h3>
 <p style='margin-left: 20px;'>
 <b>Left Drag</b> - Pan the graph (Move tool)<br>
 <b>Left Click</b> - Place measurement points (Tape tool)<br>
+<b>Click & Hold</b> - Dynamic second point while dragging (Tape tool)<br>
 <b>Right Drag</b> - Box zoom selection<br>
 <b>Mouse Wheel</b> - Zoom both axes
 </p>
@@ -70,6 +71,14 @@ HELP_DIALOG_TEXT = """
 <b>2</b> - Switch to Tape Measure tool<br>
 <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
 <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
+</p>
+
+<h3>Tape Measure Usage</h3>
+<p style='margin-left: 20px;'>
+1. Click to place first point<br>
+2. Click to place second point OR click & hold to dynamically adjust<br>
+3. Release to finalize measurement<br>
+4. Click again to clear and start over
 </p>
 
 <h3>Tabs</h3>

@@ -125,6 +125,9 @@ class MainWindow(QMainWindow):
         # Tool state
         self.current_tool = "move"  # Default tool is move
         
+        # Disable tape measure until data is loaded
+        self.tape_action.setEnabled(False)
+        
         # Load initial file if provided
         if initial_file:
             self.current_file_path = initial_file
@@ -190,7 +193,7 @@ class MainWindow(QMainWindow):
         
         # Create tape measure tool action
         self.tape_action = QAction(IconFactory.create_tape_measure_icon(), "Tape Measure", self)
-        self.tape_action.setToolTip("Measure time and voltage difference between two points [Shortcut: 2]")
+        self.tape_action.setToolTip("Measure time and voltage difference between two points\nClick to place points, or click & hold to dynamically adjust [Shortcut: 2]")
         self.tape_action.setCheckable(True)
         self.tape_action.setShortcut("2")
         self.tape_action.triggered.connect(self.select_tape_tool)
@@ -271,6 +274,11 @@ class MainWindow(QMainWindow):
     
     def _load_file_with_progress(self, file_path: str):
         """Load file in background with progress display"""
+        # Disable tape measure while loading
+        self.tape_action.setEnabled(False)
+        if self.current_tool == "tape":
+            self.select_move_tool()
+        
         # Show progress in graph widget
         self.graph_widget.set_loading_progress(0, "Starting...")
         
@@ -298,6 +306,9 @@ class MainWindow(QMainWindow):
         # Channel info already displayed from metadata_loaded signal
         # Now just plot the time series data
         self.graph_widget.plot_data(time_series, channels)
+        
+        # Enable tape measure tool now that we have data
+        self.tape_action.setEnabled(True)
         
         # Hide progress bar
         self.graph_widget.hide_progress()
