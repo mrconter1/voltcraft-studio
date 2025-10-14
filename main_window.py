@@ -2,9 +2,10 @@
 from typing import List
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView, QToolBar
+    QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
+    QProgressDialog
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
 
 from models import ChannelInfo
@@ -15,6 +16,34 @@ from constants import (
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
     FILE_DIALOG_TITLE, FILE_DIALOG_FILTER
 )
+
+
+class FileLoaderThread(QThread):
+    """Background thread for loading and parsing files"""
+    finished = pyqtSignal(list)  # Emits list of ChannelInfo
+    error = pyqtSignal(str)  # Emits error message
+    progress = pyqtSignal(int)  # Emits progress percentage
+    
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.file_path = file_path
+    
+    def run(self):
+        """Load and parse the file in background"""
+        try:
+            # Read file
+            self.progress.emit(10)
+            with open(self.file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+            
+            # Parse content
+            self.progress.emit(50)
+            channels = ChannelDataParser.parse(content)
+            
+            self.progress.emit(100)
+            self.finished.emit(channels)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -40,6 +69,11 @@ class MainWindow(QMainWindow):
         self.channel_table = QTableWidget()
         self.channel_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.channel_table)
+        
+        # Initialize loader thread and progress dialog
+        self.loader_thread = None
+        self.progress_dialog = None
+        self.current_file_path = None
     
     def _create_toolbar(self):
         """Create and configure the main toolbar"""
@@ -112,17 +146,73 @@ class MainWindow(QMainWindow):
         )
         
         if file_path:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    channels = ChannelDataParser.parse(content)
-                    self.display_channel_info(channels)
-                    self.setWindowTitle(f"{WINDOW_TITLE} - {file_path}")
-            except Exception as e:
-                # Show error in table
-                self.channel_table.setRowCount(1)
-                self.channel_table.setColumnCount(1)
-                self.channel_table.setHorizontalHeaderLabels(['Error'])
-                item = QTableWidgetItem(f"Error opening file: {str(e)}")
-                self.channel_table.setItem(0, 0, item)
+            self.current_file_path = file_path
+            self._load_file_with_progress(file_path)
+    
+    def _load_file_with_progress(self, file_path: str):
+        """Load file in background with progress dialog"""
+        # Create progress dialog
+        self.progress_dialog = QProgressDialog(
+            "Loading file...", 
+            "Cancel", 
+            0, 
+            100, 
+            self
+        )
+        self.progress_dialog.setWindowTitle("Opening File")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)  # Show immediately
+        self.progress_dialog.canceled.connect(self._cancel_loading)
+        
+        # Create and start loader thread
+        self.loader_thread = FileLoaderThread(file_path)
+        self.loader_thread.progress.connect(self._update_progress)
+        self.loader_thread.finished.connect(self._on_file_loaded)
+        self.loader_thread.error.connect(self._on_load_error)
+        self.loader_thread.start()
+    
+    def _update_progress(self, value: int):
+        """Update progress dialog value"""
+        if self.progress_dialog:
+            self.progress_dialog.setValue(value)
+    
+    def _on_file_loaded(self, channels: List[ChannelInfo]):
+        """Handle successful file load"""
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        
+        self.display_channel_info(channels)
+        self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
+        
+        # Clean up thread
+        if self.loader_thread:
+            self.loader_thread.deleteLater()
+            self.loader_thread = None
+    
+    def _on_load_error(self, error_message: str):
+        """Handle file load error"""
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        
+        # Show error in table
+        self.channel_table.setRowCount(1)
+        self.channel_table.setColumnCount(1)
+        self.channel_table.setHorizontalHeaderLabels(['Error'])
+        item = QTableWidgetItem(f"Error opening file: {error_message}")
+        self.channel_table.setItem(0, 0, item)
+        
+        # Clean up thread
+        if self.loader_thread:
+            self.loader_thread.deleteLater()
+            self.loader_thread = None
+    
+    def _cancel_loading(self):
+        """Handle cancel button in progress dialog"""
+        if self.loader_thread and self.loader_thread.isRunning():
+            self.loader_thread.terminate()
+            self.loader_thread.wait()
+            self.loader_thread.deleteLater()
+            self.loader_thread = None
 
