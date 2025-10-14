@@ -5,6 +5,7 @@ from .parser import ChannelDataParser
 
 class FileLoaderThread(QThread):
     """Background thread for loading and parsing files"""
+    metadata_loaded = pyqtSignal(list)  # Emits channel info early
     finished = pyqtSignal(list, object)  # Emits (list of ChannelInfo, TimeSeriesData)
     error = pyqtSignal(str)  # Emits error message
     progress = pyqtSignal(int, str)  # Emits (progress percentage, status message)
@@ -20,10 +21,12 @@ class FileLoaderThread(QThread):
             
             self.progress.emit(0, "Opening file...")
             
-            # Get file size for progress estimation
-            file_size = os.path.getsize(self.file_path)
+            # Parse metadata first and emit it immediately
+            self.progress.emit(5, "Reading metadata...")
+            channels = ChannelDataParser.parse_metadata_only(self.file_path)
+            self.metadata_loaded.emit(channels)
             
-            # Parse with progress callback
+            # Now parse the full data with progress callback
             def progress_callback(percent: int, message: str):
                 self.progress.emit(percent, message)
             

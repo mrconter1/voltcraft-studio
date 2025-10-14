@@ -16,6 +16,67 @@ class ChannelDataParser:
     """Parses oscilloscope channel metadata from file content"""
     
     @staticmethod
+    def parse_metadata_only(file_path: str) -> List[ChannelInfo]:
+        """
+        Parse only the channel metadata from file (fast)
+        
+        Args:
+            file_path: Path to the file to parse
+            
+        Returns:
+            List of ChannelInfo objects
+        """
+        # Read metadata (first ~20-30 lines until 'index')
+        metadata_lines = []
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                metadata_lines.append(line)
+                if line.startswith('index'):
+                    break
+        
+        # Parse channel names from first line
+        first_line = metadata_lines[0]
+        channel_names = [ch.strip() for ch in first_line.split(':')[1].split('\t') if ch.strip()]
+        
+        # Initialize channel data storage
+        channel_data_dict = {name: {} for name in channel_names}
+        
+        # Parse each metadata line
+        for line in metadata_lines[1:]:
+            if line.startswith('index'):
+                break
+            
+            if ':' in line:
+                parts = line.split(':')
+                param_name = parts[0].strip()
+                values = [v.strip() for v in parts[1].split('\t') if v.strip()]
+                
+                # Assign values to each channel
+                for j, channel_name in enumerate(channel_names):
+                    if j < len(values):
+                        channel_data_dict[channel_name][param_name] = values[j]
+        
+        # Create ChannelInfo objects
+        channels = []
+        for channel_name in channel_names:
+            data = channel_data_dict[channel_name]
+            channel = ChannelInfo(
+                name=channel_name,
+                frequency=data.get('Frequency', '?'),
+                period=data.get('Period', '?'),
+                pk_pk=data.get('PK-PK', '?'),
+                average=data.get('Average', '?'),
+                vertical_pos=data.get('Vertical pos', '?'),
+                probe_attenuation=data.get('Probe attenuation', '?'),
+                voltage_per_adc=data.get('Voltage per ADC value', '?'),
+                time_interval=data.get('Time interval', '?')
+            )
+            channels.append(channel)
+        
+        return channels
+    
+    @staticmethod
     def parse_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from file with streaming and progress updates

@@ -272,6 +272,7 @@ class MainWindow(QMainWindow):
         
         # Create and start loader thread
         self.loader_thread = FileLoaderThread(file_path)
+        self.loader_thread.metadata_loaded.connect(self._on_metadata_loaded)
         self.loader_thread.progress.connect(self._update_progress)
         self.loader_thread.finished.connect(self._on_file_loaded)
         self.loader_thread.error.connect(self._on_load_error)
@@ -281,15 +282,18 @@ class MainWindow(QMainWindow):
         """Update progress display"""
         self.graph_widget.set_loading_progress(value, message)
     
-    def _on_file_loaded(self, channels: List[ChannelInfo], time_series: TimeSeriesData):
-        """Handle successful file load"""
-        # Display channel info in table
+    def _on_metadata_loaded(self, channels: List[ChannelInfo]):
+        """Handle metadata loaded (before full data)"""
+        # Display channel info in table immediately
         self.display_channel_info(channels)
-        
-        # Display time series in graph with metadata for proper axis scaling
-        self.graph_widget.plot_data(time_series, channels)
-        
+        # Update window title
         self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
+    
+    def _on_file_loaded(self, channels: List[ChannelInfo], time_series: TimeSeriesData):
+        """Handle successful file load (full data ready)"""
+        # Channel info already displayed from metadata_loaded signal
+        # Now just plot the time series data
+        self.graph_widget.plot_data(time_series, channels)
         
         # Hide progress bar
         self.graph_widget.hide_progress()
