@@ -18,9 +18,9 @@ def generate_icon():
     success = pixmap.save('icon.ico', 'ICO')
     
     if success:
-        print("✓ Generated icon.ico successfully!")
+        print("[OK] Generated icon.ico successfully!")
     else:
-        print("✗ Failed to generate icon.ico")
+        print("[ERROR] Failed to generate icon.ico")
         sys.exit(1)
 
 if __name__ == "__main__":
