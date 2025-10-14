@@ -50,7 +50,7 @@ class FileLoaderThread(QThread):
 class MainWindow(QMainWindow):
     """Main application window"""
     
-    def __init__(self):
+    def __init__(self, initial_file: str = None):
         super().__init__()
         self.setWindowTitle(WINDOW_TITLE)
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -145,6 +145,11 @@ class MainWindow(QMainWindow):
         self.loader_thread = None
         self.progress_dialog = None
         self.current_file_path = None
+        
+        # Load initial file if provided
+        if initial_file:
+            self.current_file_path = initial_file
+            self._load_file_with_progress(initial_file)
     
     def _create_toolbar(self):
         """Create and configure the main toolbar"""
