@@ -17,6 +17,7 @@ class CustomViewBox(pg.ViewBox):
         super().__init__(*args, **kwargs)
         # Enable mouse interaction for both axes
         self.setMouseEnabled(x=True, y=True)
+        self.tape_measure_mode = False  # Flag for tape measure mode
     
     def wheelEvent(self, ev, axis=None):
         """
@@ -26,6 +27,11 @@ class CustomViewBox(pg.ViewBox):
         - Ctrl + scroll: Zoom X-axis only
         - Shift + scroll: Zoom Y-axis only
         """
+        # Block wheel events in tape measure mode
+        if self.tape_measure_mode:
+            ev.ignore()
+            return
+        
         # Get keyboard modifiers
         modifiers = ev.modifiers()
         
@@ -53,6 +59,20 @@ class CustomViewBox(pg.ViewBox):
         
         # Accept the event
         ev.accept()
+    
+    def mouseDragEvent(self, ev, axis=None):
+        """Block drag events in tape measure mode"""
+        if self.tape_measure_mode:
+            ev.ignore()
+            return
+        super().mouseDragEvent(ev, axis=axis)
+    
+    def mouseClickEvent(self, ev):
+        """Block click events in tape measure mode"""
+        if self.tape_measure_mode:
+            ev.ignore()
+            return
+        super().mouseClickEvent(ev)
 
 
 class TimeSeriesGraphWidget(QWidget):
@@ -70,6 +90,18 @@ class TimeSeriesGraphWidget(QWidget):
         super().__init__()
         self._init_ui()
         self.time_series_data = None
+        self.current_tool = "move"
+        
+        # Tape measure state
+        self.tape_point1 = None  # First click point (x, y)
+        self.tape_point2 = None  # Second click point (x, y)
+        self.tape_line = None    # Visual line between points
+        self.tape_markers = []   # Visual markers at click points
+        self.tape_text_item = None  # Text box showing measurement
+        
+        # Time interval info for calculations
+        self.time_unit = 'samples'
+        self.interval_value = 1.0
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -110,6 +142,9 @@ class TimeSeriesGraphWidget(QWidget):
         # Enable auto-range and mouse interaction
         self.plot_widget.enableAutoRange()
         self.plot_widget.setMouseEnabled(x=True, y=True)
+        
+        # Connect mouse click events to the plot widget's scene
+        self.plot_widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
         
         # Add legend with dark styling
         self.legend = self.plot_widget.addLegend(
@@ -208,6 +243,10 @@ class TimeSeriesGraphWidget(QWidget):
             time_interval_str = channels[0].time_interval
             interval_value, time_unit, scale = self._parse_time_interval(time_interval_str)
             
+            # Store for tape measure tool
+            self.time_unit = time_unit
+            self.interval_value = interval_value
+            
             # Calculate actual time array (index * time_interval)
             # Convert to appropriate unit for display
             time_values = time_series_data.indices * interval_value
@@ -217,6 +256,8 @@ class TimeSeriesGraphWidget(QWidget):
         else:
             # Fallback to sample indices
             time_values = time_series_data.indices
+            self.time_unit = 'samples'
+            self.interval_value = 1.0
             self.plot_widget.setLabel('bottom', 'Sample Index')
         
         # Plot each channel with ALL data (PyQtGraph will handle downsampling)
@@ -311,4 +352,137 @@ class TimeSeriesGraphWidget(QWidget):
     def hide_progress(self):
         """Hide the progress bar"""
         self.progress_bar.hide()
+    
+    def set_tool(self, tool: str):
+        """Set the current tool (move or tape)"""
+        self.current_tool = tool
+        
+        view_box = self.plot_widget.getViewBox()
+        
+        if tool == "move":
+            # Enable mouse panning/zooming
+            if view_box:
+                view_box.tape_measure_mode = False
+                view_box.setMouseEnabled(x=True, y=True)
+                view_box.setMouseMode(pg.ViewBox.PanMode)
+            # Clear any existing tape measure
+            self._clear_tape_measure()
+        elif tool == "tape":
+            # Enable tape measure mode to block ViewBox events
+            if view_box:
+                view_box.tape_measure_mode = True
+                view_box.rbScaleBox.hide()  # Hide the scale box if visible
+    
+    def _on_mouse_clicked(self, event):
+        """Handle mouse click events for tape measure tool"""
+        if self.current_tool != "tape":
+            return
+        
+        # Accept and consume the event to prevent it from propagating to ViewBox
+        event.accept()
+        
+        # Only handle left clicks
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        
+        # Get the scene position
+        scene_pos = event.scenePos()
+        
+        # Map scene position to data coordinates
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        # Convert scene coordinates to data coordinates
+        data_pos = view_box.mapSceneToView(scene_pos)
+        x_pos = data_pos.x()
+        y_pos = data_pos.y()
+        
+        # Handle first or second click
+        if self.tape_point1 is None:
+            # First click - set first point
+            self.tape_point1 = (x_pos, y_pos)
+            self._draw_tape_marker(x_pos, y_pos, is_first=True)
+        elif self.tape_point2 is None:
+            # Second click - set second point and draw measurement
+            self.tape_point2 = (x_pos, y_pos)
+            self._draw_tape_marker(x_pos, y_pos, is_first=False)
+            self._draw_tape_measurement()
+        else:
+            # Third click - clear and start over
+            self._clear_tape_measure()
+            self.tape_point1 = (x_pos, y_pos)
+            self._draw_tape_marker(x_pos, y_pos, is_first=True)
+    
+    def _draw_tape_marker(self, x: float, y: float, is_first: bool):
+        """Draw a marker at the clicked point"""
+        # Create a scatter plot item for the marker
+        color = (255, 100, 100) if is_first else (100, 255, 100)
+        marker = pg.ScatterPlotItem(
+            [x], [y],
+            size=15,
+            pen=pg.mkPen(color=color, width=2),
+            brush=pg.mkBrush(color + (150,)),
+            symbol='o'
+        )
+        self.plot_widget.addItem(marker)
+        self.tape_markers.append(marker)
+    
+    def _draw_tape_measurement(self):
+        """Draw line and measurement text between two points"""
+        if self.tape_point1 is None or self.tape_point2 is None:
+            return
+        
+        x1, y1 = self.tape_point1
+        x2, y2 = self.tape_point2
+        
+        # Draw line between points
+        self.tape_line = pg.PlotDataItem(
+            [x1, x2], [y1, y2],
+            pen=pg.mkPen(color=(255, 215, 0), width=2, style=Qt.PenStyle.DashLine)
+        )
+        self.plot_widget.addItem(self.tape_line)
+        
+        # Calculate time difference
+        time_diff = abs(x2 - x1)
+        
+        # Format the measurement text
+        measurement_text = f"Δt = {time_diff:.4f} {self.time_unit}"
+        
+        # Create text item for measurement box
+        self.tape_text_item = pg.TextItem(
+            text=measurement_text,
+            color=(255, 215, 0),
+            fill=(30, 30, 30, 200),
+            border=(255, 215, 0),
+            anchor=(0.5, 1.0)  # Center bottom of text
+        )
+        
+        # Position text at midpoint above the line
+        mid_x = (x1 + x2) / 2
+        mid_y = max(y1, y2) + abs(y2 - y1) * 0.1  # Slightly above the higher point
+        self.tape_text_item.setPos(mid_x, mid_y)
+        
+        self.plot_widget.addItem(self.tape_text_item)
+    
+    def _clear_tape_measure(self):
+        """Clear all tape measure visual elements"""
+        # Remove markers
+        for marker in self.tape_markers:
+            self.plot_widget.removeItem(marker)
+        self.tape_markers.clear()
+        
+        # Remove line
+        if self.tape_line is not None:
+            self.plot_widget.removeItem(self.tape_line)
+            self.tape_line = None
+        
+        # Remove text
+        if self.tape_text_item is not None:
+            self.plot_widget.removeItem(self.tape_text_item)
+            self.tape_text_item = None
+        
+        # Reset points
+        self.tape_point1 = None
+        self.tape_point2 = None
 

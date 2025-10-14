@@ -50,9 +50,16 @@ PARSER_PROGRESS_NUMPY_CONVERSION = 95  # Progress % during numpy conversion
 
 # Help dialog text
 HELP_DIALOG_TEXT = """
+<h3>Tools</h3>
+<p style='margin-left: 20px;'>
+<b>Move Tool</b> - Pan and zoom the graph (default)<br>
+<b>Tape Measure</b> - Click two points to measure time difference
+</p>
+
 <h3>Mouse Controls</h3>
 <p style='margin-left: 20px;'>
-<b>Left Drag</b> - Pan the graph<br>
+<b>Left Drag</b> - Pan the graph (Move tool)<br>
+<b>Left Click</b> - Place measurement points (Tape tool)<br>
 <b>Right Drag</b> - Box zoom selection<br>
 <b>Mouse Wheel</b> - Zoom both axes
 </p>

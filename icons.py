@@ -112,4 +112,99 @@ class IconFactory:
         
         painter.end()
         return QIcon(pixmap)
+    
+    @staticmethod
+    def create_move_icon() -> QIcon:
+        """Create a move/pan icon (hand cursor)"""
+        pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw hand shape
+        hand_path = QPainterPath()
+        
+        # Palm
+        hand_path.moveTo(20, 40)
+        hand_path.lineTo(20, 50)
+        hand_path.lineTo(35, 50)
+        hand_path.lineTo(35, 40)
+        
+        # Fingers
+        # Thumb
+        hand_path.moveTo(20, 40)
+        hand_path.lineTo(15, 35)
+        hand_path.lineTo(15, 25)
+        hand_path.lineTo(20, 25)
+        hand_path.lineTo(20, 40)
+        
+        # Index finger
+        hand_path.moveTo(22, 40)
+        hand_path.lineTo(22, 20)
+        hand_path.lineTo(26, 20)
+        hand_path.lineTo(26, 40)
+        
+        # Middle finger
+        hand_path.moveTo(28, 40)
+        hand_path.lineTo(28, 15)
+        hand_path.lineTo(32, 15)
+        hand_path.lineTo(32, 40)
+        
+        # Ring finger
+        hand_path.moveTo(34, 40)
+        hand_path.lineTo(34, 20)
+        hand_path.lineTo(38, 20)
+        hand_path.lineTo(38, 40)
+        hand_path.lineTo(35, 40)
+        
+        # Fill hand with gray gradient
+        gradient = QLinearGradient(0, 15, 0, 50)
+        gradient.setColorAt(0, QColor(230, 230, 230))
+        gradient.setColorAt(1, QColor(180, 180, 180))
+        
+        painter.setBrush(gradient)
+        painter.setPen(QPen(QColor(100, 100, 100), 2))
+        painter.drawPath(hand_path)
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    @staticmethod
+    def create_tape_measure_icon() -> QIcon:
+        """Create a tape measure icon (ruler with measurement marks)"""
+        pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw ruler body
+        gradient = QLinearGradient(0, 20, 0, 44)
+        gradient.setColorAt(0, COLOR_GOLD)
+        gradient.setColorAt(1, COLOR_DARK_GOLD)
+        
+        painter.setBrush(gradient)
+        painter.setPen(QPen(COLOR_DARKER_GOLD, 2))
+        painter.drawRect(12, 20, 40, 24)
+        
+        # Draw measurement marks
+        painter.setPen(QPen(COLOR_BLACK, 1.5))
+        for i in range(5):
+            x = 16 + i * 8
+            # Alternate between long and short marks
+            if i % 2 == 0:
+                painter.drawLine(x, 22, x, 30)
+            else:
+                painter.drawLine(x, 22, x, 27)
+        
+        # Draw numbers
+        font = QFont("Arial", 8, QFont.Weight.Bold)
+        painter.setFont(font)
+        painter.setPen(COLOR_BLACK)
+        painter.drawText(16, 40, "0")
+        painter.drawText(38, 40, "Δt")
+        
+        painter.end()
+        return QIcon(pixmap)
 

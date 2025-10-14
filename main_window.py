@@ -118,6 +118,9 @@ class MainWindow(QMainWindow):
         self.loader_thread = None
         self.current_file_path = None
         
+        # Tool state
+        self.current_tool = "move"  # Default tool is move
+        
         # Load initial file if provided
         if initial_file:
             self.current_file_path = initial_file
@@ -150,6 +153,18 @@ class MainWindow(QMainWindow):
             QToolButton:pressed {
                 background: #2d2d2d;
             }
+            QToolButton:checked {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                          stop:0 #4a90d9, stop:1 #2b5f9e);
+                border: 2px solid #5da3e8;
+                color: #ffffff;
+                font-weight: bold;
+            }
+            QToolButton:checked:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                          stop:0 #5aa0e9, stop:1 #3b6fae);
+                border: 2px solid #6db3f8;
+            }
         """)
         self.addToolBar(toolbar)
         
@@ -158,6 +173,24 @@ class MainWindow(QMainWindow):
         open_action.setToolTip("Open oscilloscope data file")
         open_action.triggered.connect(self.open_file)
         toolbar.addAction(open_action)
+        
+        # Add separator
+        toolbar.addSeparator()
+        
+        # Create move tool action
+        self.move_action = QAction(IconFactory.create_move_icon(), "Move Tool", self)
+        self.move_action.setToolTip("Pan and zoom the graph (default)")
+        self.move_action.setCheckable(True)
+        self.move_action.setChecked(True)  # Default tool
+        self.move_action.triggered.connect(self.select_move_tool)
+        toolbar.addAction(self.move_action)
+        
+        # Create tape measure tool action
+        self.tape_action = QAction(IconFactory.create_tape_measure_icon(), "Tape Measure", self)
+        self.tape_action.setToolTip("Measure time between two points")
+        self.tape_action.setCheckable(True)
+        self.tape_action.triggered.connect(self.select_tape_tool)
+        toolbar.addAction(self.tape_action)
         
         # Add separator
         toolbar.addSeparator()
@@ -207,6 +240,20 @@ class MainWindow(QMainWindow):
         if file_path:
             self.current_file_path = file_path
             self._load_file_with_progress(file_path)
+    
+    def select_move_tool(self):
+        """Select the move/pan tool"""
+        self.current_tool = "move"
+        self.move_action.setChecked(True)
+        self.tape_action.setChecked(False)
+        self.graph_widget.set_tool("move")
+    
+    def select_tape_tool(self):
+        """Select the tape measure tool"""
+        self.current_tool = "tape"
+        self.move_action.setChecked(False)
+        self.tape_action.setChecked(True)
+        self.graph_widget.set_tool("tape")
     
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
