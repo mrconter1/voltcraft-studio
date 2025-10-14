@@ -3,7 +3,7 @@ from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QProgressDialog, QSplitter
+    QProgressDialog, QTabWidget
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -67,22 +67,79 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Create splitter to divide table and graph
-        splitter = QSplitter(Qt.Orientation.Vertical)
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background-color: #1e1e1e;
+            }
+            QTabBar::tab {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                padding: 8px 20px;
+                margin-right: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                font-size: 11pt;
+            }
+            QTabBar::tab:selected {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover {
+                background-color: #3d3d3d;
+            }
+        """)
         
-        # Create table widget for channel info
+        # Tab 1: Waveform view (graph only - full screen)
+        self.graph_widget = TimeSeriesGraphWidget()
+        self.tab_widget.addTab(self.graph_widget, "📈 Waveform")
+        
+        # Tab 2: Channel info (metadata table)
+        channel_info_widget = QWidget()
+        channel_info_layout = QVBoxLayout(channel_info_widget)
+        channel_info_layout.setContentsMargins(10, 10, 10, 10)
+        
         self.channel_table = QTableWidget()
         self.channel_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        splitter.addWidget(self.channel_table)
+        self.channel_table.verticalHeader().setVisible(True)
+        self.channel_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.channel_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.channel_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #2d2d2d;
+                color: #e0e0e0;
+                font-size: 11pt;
+                gridline-color: #444444;
+                border: 1px solid #444444;
+            }
+            QTableWidget::item {
+                padding: 8px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #404040;
+            }
+            QHeaderView::section {
+                background-color: #1e1e1e;
+                color: #e0e0e0;
+                padding: 10px;
+                border: 1px solid #444444;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QTableView QTableCornerButton::section {
+                background-color: #1e1e1e;
+                border: 1px solid #444444;
+            }
+        """)
+        channel_info_layout.addWidget(self.channel_table)
         
-        # Create graph widget for time series
-        self.graph_widget = TimeSeriesGraphWidget()
-        splitter.addWidget(self.graph_widget)
+        self.tab_widget.addTab(channel_info_widget, "📊 Channel Info")
         
-        # Set initial splitter sizes (30% table, 70% graph)
-        splitter.setSizes([200, 400])
-        
-        layout.addWidget(splitter)
+        layout.addWidget(self.tab_widget)
         
         # Initialize loader thread and progress dialog
         self.loader_thread = None
@@ -147,8 +204,9 @@ class MainWindow(QMainWindow):
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.channel_table.setItem(row, col, item)
         
-        # Adjust column widths
-        self.channel_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        # Resize to fit content
+        self.channel_table.resizeColumnsToContents()
+        self.channel_table.resizeRowsToContents()
     
     def open_file(self):
         """Open and parse an oscilloscope data file"""
@@ -199,8 +257,8 @@ class MainWindow(QMainWindow):
         # Display channel info in table
         self.display_channel_info(channels)
         
-        # Display time series in graph
-        self.graph_widget.plot_data(time_series)
+        # Display time series in graph with metadata for proper axis scaling
+        self.graph_widget.plot_data(time_series, channels)
         
         self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
         

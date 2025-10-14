@@ -22,12 +22,17 @@ The application will start maximized for optimal data visualization. Click the f
 
 - Clean and modern interface with custom icon
 - Compact toolbar with intuitive controls
+- **Tabbed interface** for optimal workflow
+  - **Waveform tab** - Full-screen graph for maximum visualization space
+  - **Channel Info tab** - Clean, dark-mode metadata table
 - **Interactive time series graph** - visualize voltage data across all channels
+  - **Accurate time axis** - displays actual time values (µs, ms, s) from metadata, not just sample indices
+  - **Full screen graph** - 100% of available space dedicated to waveform when viewing
   - Displays ALL data points (even 10M+ samples) with intelligent downsampling
   - Zoom with mouse wheel to see fine details
   - Pan by dragging to browse through data
   - **Dynamic Level-of-Detail** - automatically downsamples when zoomed out, shows actual data when zoomed in
-  - Peak-preserving downsampling ensures no signal features are lost
+  - OpenGL GPU acceleration for smooth rendering
   - Auto-scaling and legend
   - Handles millions of data points smoothly
 - **Background file loading with progress dialog** - handles large files (millions of rows) smoothly
