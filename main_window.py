@@ -154,15 +154,13 @@ class MainWindow(QMainWindow):
                 background: #2d2d2d;
             }
             QToolButton:checked {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                          stop:0 #4a90d9, stop:1 #2b5f9e);
+                background: transparent;
                 border: 2px solid #5da3e8;
                 color: #ffffff;
                 font-weight: bold;
             }
             QToolButton:checked:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                          stop:0 #5aa0e9, stop:1 #3b6fae);
+                background: rgba(90, 160, 233, 0.2);
                 border: 2px solid #6db3f8;
             }
         """)
