@@ -30,41 +30,24 @@ class FileLoaderThread(QThread):
         self.file_path = file_path
     
     def run(self):
-        """Load and parse the file in background"""
+        """Load and parse the file in background with streaming"""
         try:
-            # Get file size for progress calculation
             import os
+            
+            self.progress.emit(0, "Opening file...")
+            
+            # Get file size for progress estimation
             file_size = os.path.getsize(self.file_path)
             
-            # Read file with progress updates
-            self.progress.emit(0, "Opening file...")
-            content = ""
-            chunk_size = 1024 * 1024  # Read in 1MB chunks for better performance
-            bytes_read = 0
-            last_progress = -1  # Track last reported progress
+            # Parse with progress callback
+            def progress_callback(percent: int, message: str):
+                self.progress.emit(percent, message)
             
-            with open(self.file_path, 'r', encoding='utf-8') as file:
-                while True:
-                    chunk = file.read(chunk_size)
-                    if not chunk:
-                        break
-                    content += chunk
-                    bytes_read += len(chunk.encode('utf-8'))
-                    # Report 0-50% for reading, but only when percentage changes
-                    progress = min(50, int((bytes_read / file_size) * 50))
-                    if progress != last_progress:
-                        mb_read = bytes_read / (1024 * 1024)
-                        self.progress.emit(progress, f"Reading file... {mb_read:.1f} MB")
-                        last_progress = progress
+            channels, time_series = ChannelDataParser.parse_streaming(
+                self.file_path, 
+                progress_callback
+            )
             
-            self.progress.emit(50, "Parsing data...")
-            
-            # Parse content
-            channels, time_series = ChannelDataParser.parse(content)
-            
-            self.progress.emit(75, "Processing channels...")
-            
-            # Small delay to show final progress
             self.progress.emit(100, "Complete!")
             self.finished.emit(channels, time_series)
         except Exception as e:
