@@ -3,7 +3,7 @@ from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QProgressDialog, QTabWidget, QMessageBox
+    QTabWidget, QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -23,7 +23,7 @@ class FileLoaderThread(QThread):
     """Background thread for loading and parsing files"""
     finished = pyqtSignal(list, object)  # Emits (list of ChannelInfo, TimeSeriesData)
     error = pyqtSignal(str)  # Emits error message
-    progress = pyqtSignal(int)  # Emits progress percentage
+    progress = pyqtSignal(int, str)  # Emits (progress percentage, status message)
     
     def __init__(self, file_path: str):
         super().__init__()
@@ -32,16 +32,40 @@ class FileLoaderThread(QThread):
     def run(self):
         """Load and parse the file in background"""
         try:
-            # Read file
-            self.progress.emit(10)
+            # Get file size for progress calculation
+            import os
+            file_size = os.path.getsize(self.file_path)
+            
+            # Read file with progress updates
+            self.progress.emit(0, "Opening file...")
+            content = ""
+            chunk_size = 1024 * 1024  # Read in 1MB chunks for better performance
+            bytes_read = 0
+            last_progress = -1  # Track last reported progress
+            
             with open(self.file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
+                while True:
+                    chunk = file.read(chunk_size)
+                    if not chunk:
+                        break
+                    content += chunk
+                    bytes_read += len(chunk.encode('utf-8'))
+                    # Report 0-50% for reading, but only when percentage changes
+                    progress = min(50, int((bytes_read / file_size) * 50))
+                    if progress != last_progress:
+                        mb_read = bytes_read / (1024 * 1024)
+                        self.progress.emit(progress, f"Reading file... {mb_read:.1f} MB")
+                        last_progress = progress
+            
+            self.progress.emit(50, "Parsing data...")
             
             # Parse content
-            self.progress.emit(50)
             channels, time_series = ChannelDataParser.parse(content)
             
-            self.progress.emit(100)
+            self.progress.emit(75, "Processing channels...")
+            
+            # Small delay to show final progress
+            self.progress.emit(100, "Complete!")
             self.finished.emit(channels, time_series)
         except Exception as e:
             self.error.emit(str(e))
@@ -141,9 +165,8 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(self.tab_widget)
         
-        # Initialize loader thread and progress dialog
+        # Initialize loader thread
         self.loader_thread = None
-        self.progress_dialog = None
         self.current_file_path = None
         
         # Load initial file if provided
@@ -267,19 +290,9 @@ class MainWindow(QMainWindow):
         msg_box.exec()
     
     def _load_file_with_progress(self, file_path: str):
-        """Load file in background with progress dialog"""
-        # Create progress dialog
-        self.progress_dialog = QProgressDialog(
-            "Loading file...", 
-            "Cancel", 
-            0, 
-            100, 
-            self
-        )
-        self.progress_dialog.setWindowTitle("Opening File")
-        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress_dialog.setMinimumDuration(0)  # Show immediately
-        self.progress_dialog.canceled.connect(self._cancel_loading)
+        """Load file in background with progress display"""
+        # Show progress in graph widget
+        self.graph_widget.set_loading_progress(0, "Starting...")
         
         # Create and start loader thread
         self.loader_thread = FileLoaderThread(file_path)
@@ -288,17 +301,12 @@ class MainWindow(QMainWindow):
         self.loader_thread.error.connect(self._on_load_error)
         self.loader_thread.start()
     
-    def _update_progress(self, value: int):
-        """Update progress dialog value"""
-        if self.progress_dialog:
-            self.progress_dialog.setValue(value)
+    def _update_progress(self, value: int, message: str):
+        """Update progress display"""
+        self.graph_widget.set_loading_progress(value, message)
     
     def _on_file_loaded(self, channels: List[ChannelInfo], time_series: TimeSeriesData):
         """Handle successful file load"""
-        if self.progress_dialog:
-            self.progress_dialog.close()
-            self.progress_dialog = None
-        
         # Display channel info in table
         self.display_channel_info(channels)
         
@@ -307,6 +315,9 @@ class MainWindow(QMainWindow):
         
         self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
         
+        # Hide progress bar
+        self.graph_widget.hide_progress()
+        
         # Clean up thread
         if self.loader_thread:
             self.loader_thread.deleteLater()
@@ -314,27 +325,19 @@ class MainWindow(QMainWindow):
     
     def _on_load_error(self, error_message: str):
         """Handle file load error"""
-        if self.progress_dialog:
-            self.progress_dialog.close()
-            self.progress_dialog = None
+        # Hide progress bar and show error
+        self.graph_widget.hide_progress()
         
-        # Show error in table
-        self.channel_table.setRowCount(1)
-        self.channel_table.setColumnCount(1)
-        self.channel_table.setHorizontalHeaderLabels(['Error'])
-        item = QTableWidgetItem(f"Error opening file: {error_message}")
-        self.channel_table.setItem(0, 0, item)
+        # Show error message box
+        QMessageBox.critical(
+            self,
+            "Error Loading File",
+            f"Failed to load file:\n\n{error_message}",
+            QMessageBox.StandardButton.Ok
+        )
         
         # Clean up thread
         if self.loader_thread:
-            self.loader_thread.deleteLater()
-            self.loader_thread = None
-    
-    def _cancel_loading(self):
-        """Handle cancel button in progress dialog"""
-        if self.loader_thread and self.loader_thread.isRunning():
-            self.loader_thread.terminate()
-            self.loader_thread.wait()
             self.loader_thread.deleteLater()
             self.loader_thread = None
 

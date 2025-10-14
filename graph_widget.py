@@ -3,7 +3,7 @@ import pyqtgraph as pg
 import numpy as np
 import re
 from typing import List
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
@@ -118,6 +118,26 @@ class TimeSeriesGraphWidget(QWidget):
         )
         
         layout.addWidget(self.plot_widget)
+        
+        # Progress bar for loading (hidden by default)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setMaximumHeight(25)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-top: 1px solid #444444;
+                text-align: center;
+                background-color: #2d2d2d;
+                color: #cccccc;
+                font-size: 10pt;
+            }
+            QProgressBar::chunk {
+                background-color: #2196f3;
+            }
+        """)
+        self.progress_bar.hide()
+        layout.addWidget(self.progress_bar)
         
         # Info label with dark styling
         self.info_label = QLabel("No data loaded")
@@ -280,4 +300,15 @@ class TimeSeriesGraphWidget(QWidget):
         self.plot_widget.clear()
         self.time_series_data = None
         self.info_label.setText("No data loaded")
+    
+    def set_loading_progress(self, value: int, message: str):
+        """Update loading progress bar"""
+        self.progress_bar.setValue(value)
+        self.progress_bar.setFormat(f"{message} - {value}%")
+        if not self.progress_bar.isVisible():
+            self.progress_bar.show()
+    
+    def hide_progress(self):
+        """Hide the progress bar"""
+        self.progress_bar.hide()
 
