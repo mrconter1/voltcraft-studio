@@ -4,10 +4,10 @@ from typing import List, Optional
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, 
     QPushButton, QVBoxLayout, QWidget, QFileDialog,
-    QTableWidget, QTableWidgetItem, QHeaderView
+    QTableWidget, QTableWidgetItem, QHeaderView, QToolBar
 )
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPen
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont, QPen, QAction, QPainterPath, QLinearGradient
 
 
 @dataclass
@@ -33,15 +33,44 @@ class TextViewer(QMainWindow):
         # Create and set a cute icon
         self.setWindowIcon(self.create_icon())
         
+        # Create toolbar
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setIconSize(QSize(24, 24))
+        toolbar.setMovable(False)
+        toolbar.setStyleSheet("""
+            QToolBar {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                          stop:0 #f5f5f5, stop:1 #e0e0e0);
+                border-bottom: 1px solid #cccccc;
+                spacing: 6px;
+                padding: 4px;
+            }
+            QToolButton {
+                background: white;
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QToolButton:hover {
+                background: #e3f2fd;
+                border: 1px solid #2196f3;
+            }
+            QToolButton:pressed {
+                background: #bbdefb;
+            }
+        """)
+        self.addToolBar(toolbar)
+        
+        # Create open action with custom icon
+        open_action = QAction(self.create_folder_icon(), "Open File", self)
+        open_action.setToolTip("Open oscilloscope data file")
+        open_action.triggered.connect(self.open_file)
+        toolbar.addAction(open_action)
+        
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
-        
-        # Create Open button
-        self.open_button = QPushButton("Open File")
-        self.open_button.clicked.connect(self.open_file)
-        layout.addWidget(self.open_button)
         
         # Create table widget for channel info
         self.channel_table = QTableWidget()
@@ -72,6 +101,49 @@ class TextViewer(QMainWindow):
         painter.setFont(font)
         painter.setPen(QColor(255, 215, 0))  # Gold color for bolt
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "⚡")
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    def create_folder_icon(self):
+        """Create a modern folder open icon"""
+        pixmap = QPixmap(64, 64)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw folder body
+        folder_path = QPainterPath()
+        folder_path.moveTo(12, 24)
+        folder_path.lineTo(12, 52)
+        folder_path.lineTo(52, 52)
+        folder_path.lineTo(52, 24)
+        folder_path.lineTo(12, 24)
+        
+        # Draw folder tab
+        tab_path = QPainterPath()
+        tab_path.moveTo(12, 24)
+        tab_path.lineTo(12, 18)
+        tab_path.lineTo(30, 18)
+        tab_path.lineTo(32, 24)
+        tab_path.lineTo(12, 24)
+        
+        # Fill folder with gradient
+        gradient = QLinearGradient(0, 18, 0, 52)
+        gradient.setColorAt(0, QColor(255, 215, 0))  # Gold
+        gradient.setColorAt(1, QColor(218, 165, 32))  # Darker gold
+        
+        painter.setBrush(gradient)
+        painter.setPen(QPen(QColor(180, 130, 0), 2))
+        painter.drawPath(tab_path)
+        painter.drawPath(folder_path)
+        
+        # Draw document lines inside
+        painter.setPen(QPen(QColor(255, 255, 255, 150), 2))
+        painter.drawLine(20, 32, 44, 32)
+        painter.drawLine(20, 38, 44, 38)
+        painter.drawLine(20, 44, 36, 44)
         
         painter.end()
         return QIcon(pixmap)
