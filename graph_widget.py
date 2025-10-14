@@ -10,6 +10,51 @@ from PyQt6.QtGui import QColor
 from models import TimeSeriesData, ChannelInfo
 
 
+class CustomViewBox(pg.ViewBox):
+    """Custom ViewBox with independent axis zoom control"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Enable mouse interaction for both axes
+        self.setMouseEnabled(x=True, y=True)
+    
+    def wheelEvent(self, ev, axis=None):
+        """
+        Handle mouse wheel events with modifier keys for independent axis zooming
+        
+        - Normal scroll: Zoom both axes
+        - Ctrl + scroll: Zoom X-axis only
+        - Shift + scroll: Zoom Y-axis only
+        """
+        # Get keyboard modifiers
+        modifiers = ev.modifiers()
+        
+        # Determine which axis to zoom based on modifier keys
+        if modifiers == Qt.KeyboardModifier.ControlModifier:
+            # Ctrl held - zoom X-axis only
+            axis = 0  # X-axis
+            mask = [True, False]
+        elif modifiers == Qt.KeyboardModifier.ShiftModifier:
+            # Shift held - zoom Y-axis only
+            axis = 1  # Y-axis
+            mask = [False, True]
+        else:
+            # No modifier - zoom both axes (default behavior)
+            mask = [True, True]
+        
+        # Temporarily set which axes respond to mouse
+        self.setMouseEnabled(x=mask[0], y=mask[1])
+        
+        # Call parent wheelEvent to handle the actual zooming
+        super().wheelEvent(ev, axis=axis)
+        
+        # Restore both axes to be mouse-enabled
+        self.setMouseEnabled(x=True, y=True)
+        
+        # Accept the event
+        ev.accept()
+
+
 class TimeSeriesGraphWidget(QWidget):
     """Widget for displaying time series oscilloscope data"""
     
@@ -31,9 +76,12 @@ class TimeSeriesGraphWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Create plot widget with dark theme
+        # Create plot widget with dark theme and custom ViewBox
         pg.setConfigOptions(antialias=True)
-        self.plot_widget = pg.PlotWidget()
+        
+        # Create custom ViewBox for independent axis control
+        view_box = CustomViewBox()
+        self.plot_widget = pg.PlotWidget(viewBox=view_box)
         
         # Enable OpenGL for GPU acceleration (much faster for large datasets)
         try:
@@ -212,12 +260,12 @@ class TimeSeriesGraphWidget(QWidget):
             self.info_label.setText(
                 f"Loaded {num_samples:,} samples across {num_channels} channel(s){duration_str} | "
                 f"Voltage range: {min_v:.2f} to {max_v:.2f} mV | "
-                f"Zoom to see details, auto-downsampling active"
+                f"Scroll: zoom both | Ctrl+Scroll: zoom X | Shift+Scroll: zoom Y"
             )
         else:
             self.info_label.setText(
                 f"Loaded {num_samples:,} samples across {num_channels} channel(s) | "
-                f"Use mouse wheel to zoom, drag to pan"
+                f"Scroll: zoom both | Ctrl+Scroll: zoom X | Shift+Scroll: zoom Y"
             )
         
         # Auto-range to show all data
