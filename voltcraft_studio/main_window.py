@@ -205,6 +205,11 @@ class MainWindow(QMainWindow):
                 spacing: 6px;
                 padding: 4px;
             }
+            QToolBar::separator {
+                background: white;
+                width: 1px;
+                margin: 4px 8px;
+            }
             QToolButton {
                 background: #3d3d3d;
                 border: 1px solid #555555;
