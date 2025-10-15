@@ -183,8 +183,9 @@ class MainWindow(QMainWindow):
         # Tool state
         self.current_tool = "move"  # Default tool is move
         
-        # Disable tape measure until data is loaded
+        # Disable tape measure and binarize until data is loaded
         self.tape_action.setEnabled(False)
+        self.binarize_action.setEnabled(False)
         
         # Load initial file if provided
         if initial_file:
@@ -256,6 +257,17 @@ class MainWindow(QMainWindow):
         self.tape_action.setShortcut("2")
         self.tape_action.triggered.connect(self.select_tape_tool)
         toolbar.addAction(self.tape_action)
+        
+        # Add separator
+        toolbar.addSeparator()
+        
+        # Create binarize toggle action
+        self.binarize_action = QAction(IconFactory.create_binarize_icon(), "Binarize Signal", self)
+        self.binarize_action.setToolTip("Toggle signal binarization (converts to binary square wave) [Shortcut: 3]")
+        self.binarize_action.setCheckable(True)
+        self.binarize_action.setShortcut("3")
+        self.binarize_action.triggered.connect(self.toggle_binarize)
+        toolbar.addAction(self.binarize_action)
         
         # Add separator
         toolbar.addSeparator()
@@ -444,6 +456,11 @@ class MainWindow(QMainWindow):
         self.tape_action.setChecked(True)
         self.graph_widget.set_tool("tape")
     
+    def toggle_binarize(self):
+        """Toggle signal binarization on/off"""
+        is_binarized = self.binarize_action.isChecked()
+        self.graph_widget.set_binarize(is_binarized)
+    
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
         msg_box = QMessageBox(self)
@@ -456,8 +473,10 @@ class MainWindow(QMainWindow):
     
     def _load_file_with_progress(self, file_path: str):
         """Load file in background with progress display"""
-        # Disable tape measure while loading
+        # Disable tape measure and binarize while loading
         self.tape_action.setEnabled(False)
+        self.binarize_action.setEnabled(False)
+        self.binarize_action.setChecked(False)
         if self.current_tool == "tape":
             self.select_move_tool()
         
@@ -489,8 +508,9 @@ class MainWindow(QMainWindow):
         # Now just plot the time series data
         self.graph_widget.plot_data(time_series, channels)
         
-        # Enable tape measure tool now that we have data
+        # Enable tape measure and binarize tools now that we have data
         self.tape_action.setEnabled(True)
+        self.binarize_action.setEnabled(True)
         
         # Hide progress bar
         self.graph_widget.hide_progress()

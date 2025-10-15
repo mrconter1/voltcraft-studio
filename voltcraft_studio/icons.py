@@ -236,4 +236,42 @@ class IconFactory:
         
         painter.end()
         return QIcon(pixmap)
+    
+    @staticmethod
+    def create_binarize_icon() -> QIcon:
+        """Create a binarize icon (square wave representing binary signal)"""
+        pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw square wave (smoothed signal)
+        painter.setPen(QPen(QColor(100, 200, 255), 3))
+        square_wave = QPainterPath()
+        square_wave.moveTo(8, 40)
+        square_wave.lineTo(8, 24)
+        square_wave.lineTo(18, 24)
+        square_wave.lineTo(18, 40)
+        square_wave.lineTo(28, 40)
+        square_wave.lineTo(28, 24)
+        square_wave.lineTo(38, 24)
+        square_wave.lineTo(38, 40)
+        square_wave.lineTo(48, 40)
+        square_wave.lineTo(48, 24)
+        square_wave.lineTo(56, 24)
+        painter.drawPath(square_wave)
+        
+        # Draw small arrow/indicator in top right
+        painter.setPen(QPen(COLOR_GOLD, 2))
+        painter.setBrush(COLOR_GOLD)
+        arrow = QPainterPath()
+        arrow.moveTo(52, 8)
+        arrow.lineTo(48, 12)
+        arrow.lineTo(56, 12)
+        arrow.closeSubpath()
+        painter.drawPath(arrow)
+        
+        painter.end()
+        return QIcon(pixmap)
 

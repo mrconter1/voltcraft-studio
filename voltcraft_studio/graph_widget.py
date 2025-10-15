@@ -312,6 +312,11 @@ class TimeSeriesGraphWidget(QWidget):
         # Time interval info for calculations
         self.time_unit = 'samples'
         self.interval_quantity = 1.0 * ureg.dimensionless  # Pint quantity
+        
+        # Binarize state
+        self.binarize_enabled = False
+        self.original_data = None  # Store original data for toggling
+        self.channels_info = None  # Store channel info for re-plotting
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -412,25 +417,68 @@ class TimeSeriesGraphWidget(QWidget):
         layout.addWidget(self.info_label)
     
     
-    def plot_data(self, time_series_data: TimeSeriesData, channels: List[ChannelInfo] = None):
+    def plot_data(self, time_series_data: TimeSeriesData, channels: List[ChannelInfo] = None, preserve_view: bool = False):
         """
         Plot time series data with automatic downsampling
         
         Args:
             time_series_data: TimeSeriesData object containing the data to plot
             channels: List of ChannelInfo with metadata for proper axis scaling
+            preserve_view: If True, preserve the current zoom/pan state
         """
+        # Save current view range and channel visibility if we need to preserve them
+        saved_view_range = None
+        saved_auto_range_state = None
+        saved_channel_visibility = {}
+        
+        if preserve_view and self.time_series_data is not None:
+            view_box = self.plot_widget.getViewBox()
+            if view_box is not None:
+                # Get the current view range (returns [[xmin, xmax], [ymin, ymax]])
+                saved_view_range = view_box.viewRange()
+                # Also save auto-range state
+                saved_auto_range_state = view_box.autoRangeEnabled()
+                print(f"  💾 Saving view: X=[{saved_view_range[0][0]:.2f}, {saved_view_range[0][1]:.2f}], Y=[{saved_view_range[1][0]:.2f}, {saved_view_range[1][1]:.2f}]")
+            
+            # Save which channels are currently visible
+            if self.legend is not None:
+                print(f"  🔍 Checking visibility of {len(self.legend.items)} channel(s)...")
+                for item in self.legend.items:
+                    # item is a tuple of (PlotDataItem, LabelItem)
+                    plot_item = item[0]
+                    label_item = item[1]
+                    channel_name = label_item.text
+                    # Check if the plot item is visible
+                    is_visible = plot_item.isVisible()
+                    saved_channel_visibility[channel_name] = is_visible
+                    print(f"  💾 Saving {channel_name} visibility = {is_visible}")
+        
+        # Store original data for binarize toggle
+        self.original_data = time_series_data
+        self.channels_info = channels
+        
+        # Apply binarization if enabled
+        if self.binarize_enabled:
+            time_series_data = self._apply_binarize(time_series_data)
+        
         self.time_series_data = time_series_data
         
-        # Clear previous plots
+        # Clear previous plots - this removes all plot items but may affect the legend
         self.plot_widget.clear()
         
-        # Create legend (only when we have data to show)
-        if self.legend is None or len(self.plot_widget.plotItem.legend.items) == 0:
-            self.legend = self.plot_widget.addLegend(
-                brush=(30, 30, 30, 180),
-                pen={'color': '#666666', 'width': 1}
-            )
+        # Remove the old legend if it exists (clear() should remove it, but be explicit)
+        if self.legend is not None:
+            try:
+                self.plot_widget.plotItem.legend = None
+                self.legend = None
+            except:
+                pass
+        
+        # Create a fresh legend
+        self.legend = self.plot_widget.addLegend(
+            brush=(30, 30, 30, 180),
+            pen={'color': '#666666', 'width': 1}
+        )
         
         if not time_series_data or len(time_series_data.indices) == 0:
             self.info_label.setText("No data to display")
@@ -471,6 +519,8 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Plot each channel with ALL data (PyQtGraph will handle downsampling)
         plot_items = []
+        plot_items_by_name = {}  # Map channel name to plot item for visibility restoration
+        
         for i, channel_name in enumerate(time_series_data.channel_names):
             if channel_name in time_series_data.channel_data:
                 voltage_data = time_series_data.channel_data[channel_name]
@@ -502,6 +552,7 @@ class TimeSeriesGraphWidget(QWidget):
                 plot_item.setClipToView(True)
                 
                 plot_items.append(plot_item)
+                plot_items_by_name[channel_name] = plot_item
         
         # Update info label
         num_samples = len(time_series_data.indices)
@@ -540,11 +591,33 @@ class TimeSeriesGraphWidget(QWidget):
                 f"Scroll: zoom both | Ctrl+Scroll: zoom X | Shift+Scroll: zoom Y"
             )
         
-        # Auto-range to show all data
-        self.plot_widget.autoRange()
+        # Restore channel visibility if preserved
+        if saved_channel_visibility:
+            print(f"  🔍 Restoring visibility for {len(saved_channel_visibility)} channel(s)...")
+            for channel_name, is_visible in saved_channel_visibility.items():
+                if channel_name in plot_items_by_name:
+                    plot_items_by_name[channel_name].setVisible(is_visible)
+                    print(f"  ✓ Set {channel_name} visibility = {is_visible}")
+                else:
+                    print(f"  ⚠ Could not find {channel_name} in plot items!")
         
-        # Disable auto-ranging after initial display
-        self.plot_widget.enableAutoRange(False)
+        # Restore view range if preserved, otherwise auto-range
+        if saved_view_range is not None:
+            # Disable auto-range first to prevent it from interfering
+            self.plot_widget.enableAutoRange(False)
+            
+            view_box = self.plot_widget.getViewBox()
+            if view_box is not None:
+                # Disable auto-range on the ViewBox itself
+                view_box.enableAutoRange(enable=False)
+                # Set the exact range we saved
+                view_box.setRange(xRange=saved_view_range[0], yRange=saved_view_range[1], padding=0, update=True)
+                print(f"  ✓ Restored view: X=[{saved_view_range[0][0]:.2f}, {saved_view_range[0][1]:.2f}], Y=[{saved_view_range[1][0]:.2f}, {saved_view_range[1][1]:.2f}]")
+        else:
+            # Auto-range to show all data
+            self.plot_widget.autoRange()
+            # Disable auto-ranging after initial display
+            self.plot_widget.enableAutoRange(False)
     
     def clear(self):
         """Clear the plot"""
@@ -814,4 +887,150 @@ class TimeSeriesGraphWidget(QWidget):
         self.tape_point2 = None
         self.is_dragging_tape = False
         self.mouse_is_pressed = False
+    
+    def set_binarize(self, enabled: bool):
+        """Enable or disable signal binarization"""
+        self.binarize_enabled = enabled
+        
+        if enabled:
+            print("\n🔧 Binarize ENABLED - Converting to binary square wave representation")
+        else:
+            print("\n🔧 Binarize DISABLED - Showing original signal")
+        
+        # Re-plot with binarization applied/removed, preserving current zoom/pan
+        if self.original_data is not None:
+            self.plot_data(self.original_data, self.channels_info, preserve_view=True)
+    
+    def _apply_binarize(self, time_series_data: TimeSeriesData) -> TimeSeriesData:
+        """
+        Apply binarization to the signal by extracting only low-to-high and high-to-low transitions.
+        
+        This creates a binary square wave representation of the signal showing only state changes.
+        
+        Args:
+            time_series_data: Original time series data
+            
+        Returns:
+            Binarized time series data with only transitions
+        """
+        print("\n" + "="*60)
+        print("APPLYING SIGNAL BINARIZATION")
+        print("="*60)
+        print(f"Processing {len(time_series_data.channel_names)} channel(s)...")
+        print(f"Total samples per channel: {len(time_series_data.indices):,}")
+        
+        binarized_channel_data = {}
+        
+        for channel_idx, channel_name in enumerate(time_series_data.channel_names, 1):
+            if channel_name not in time_series_data.channel_data:
+                continue
+            
+            original_voltage = time_series_data.channel_data[channel_name]
+            
+            print(f"\n[{channel_idx}/{len(time_series_data.channel_names)}] Processing {channel_name}...")
+            
+            if len(original_voltage) == 0:
+                print(f"  ⚠ Empty channel - skipping")
+                binarized_channel_data[channel_name] = original_voltage
+                continue
+            
+            # Calculate threshold as the midpoint between min and max
+            v_min = np.min(original_voltage)
+            v_max = np.max(original_voltage)
+            threshold = (v_min + v_max) / 2
+            
+            print(f"  Voltage range: {v_min:.4f} mV to {v_max:.4f} mV")
+            print(f"  Threshold: {threshold:.4f} mV")
+            
+            # Create binary signal (0 = low, 1 = high)
+            binary_signal = (original_voltage > threshold).astype(int)
+            
+            # Find transitions (where binary signal changes)
+            transitions = np.diff(binary_signal, prepend=binary_signal[0])
+            transition_indices = np.where(transitions != 0)[0]
+            
+            # Count low-to-high and high-to-low transitions
+            low_to_high = 0
+            high_to_low = 0
+            for trans_idx in transition_indices:
+                if binary_signal[trans_idx] == 1:
+                    low_to_high += 1
+                else:
+                    high_to_low += 1
+            
+            print(f"  Transitions detected: {len(transition_indices):,}")
+            print(f"    • Low-to-high: {low_to_high:,}")
+            print(f"    • High-to-low: {high_to_low:,}")
+            
+            # If no transitions found, keep original signal
+            if len(transition_indices) == 0:
+                print(f"  ⚠ No transitions found - keeping original signal")
+                binarized_channel_data[channel_name] = original_voltage
+                continue
+            
+            # Build binarized signal with only transitions
+            # We'll create a new array with transition points
+            binarized_indices = [0]  # Start at beginning
+            binarized_voltages = [v_min if binary_signal[0] == 0 else v_max]
+            
+            for trans_idx in transition_indices:
+                # Add point just before transition (to create vertical edge)
+                binarized_indices.append(trans_idx)
+                current_state = binary_signal[trans_idx - 1] if trans_idx > 0 else binary_signal[0]
+                binarized_voltages.append(v_min if current_state == 0 else v_max)
+                
+                # Add point at transition (creates the vertical line)
+                binarized_indices.append(trans_idx)
+                new_state = binary_signal[trans_idx]
+                binarized_voltages.append(v_min if new_state == 0 else v_max)
+            
+            # Add final point at the end
+            binarized_indices.append(len(original_voltage) - 1)
+            final_state = binary_signal[-1]
+            binarized_voltages.append(v_min if final_state == 0 else v_max)
+            
+            # Create the binarized voltage array using vectorized operations (FAST!)
+            total_points = len(time_series_data.indices)
+            print(f"  Creating binary square wave from {total_points:,} datapoints...")
+            
+            # Use NumPy's searchsorted for ultra-fast lookup (O(n log m) instead of O(n*m))
+            # This finds which transition segment each point belongs to
+            binarized_indices_array = np.array(binarized_indices)
+            binarized_voltages_array = np.array(binarized_voltages)
+            
+            # searchsorted tells us which transition index each point should use
+            # 'right' means if a point equals a transition index, use the next segment
+            indices_positions = np.searchsorted(binarized_indices_array, np.arange(total_points), side='right') - 1
+            
+            # Clamp to valid range [0, len-1]
+            indices_positions = np.clip(indices_positions, 0, len(binarized_voltages_array) - 1)
+            
+            # Now just index into the voltages array - vectorized operation!
+            full_binarized = binarized_voltages_array[indices_positions]
+            
+            print(f"  ✓ Binary square wave created instantly using vectorized NumPy operations")
+            
+            binarized_channel_data[channel_name] = full_binarized
+            
+            # Calculate compression ratio
+            original_unique_points = len(np.unique(original_voltage))
+            binarized_unique_points = len(np.unique(full_binarized))
+            compression_ratio = (1 - binarized_unique_points / original_unique_points) * 100 if original_unique_points > 0 else 0
+            
+            print(f"  Binary signal statistics:")
+            print(f"    • Original unique values: {original_unique_points:,}")
+            print(f"    • Binarized unique values: {binarized_unique_points:,}")
+            print(f"    • Simplification: {compression_ratio:.1f}%")
+            print(f"  ✓ {channel_name} binarization complete")
+        
+        print("\n" + "="*60)
+        print("BINARIZATION COMPLETE")
+        print("="*60 + "\n")
+        
+        # Create new TimeSeriesData with binarized signals
+        return TimeSeriesData(
+            indices=time_series_data.indices,
+            channel_data=binarized_channel_data,
+            channel_names=time_series_data.channel_names
+        )
 

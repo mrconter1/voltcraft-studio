@@ -53,7 +53,8 @@ HELP_DIALOG_TEXT = """
 <h3>Tools</h3>
 <p style='margin-left: 20px;'>
 <b>Move Tool</b> - Pan and zoom the graph (default)<br>
-<b>Tape Measure</b> - Measure time and voltage difference between two points
+<b>Tape Measure</b> - Measure time and voltage difference between two points<br>
+<b>Binarize Signal</b> - Convert signal to binary square wave (HIGH/LOW states only)
 </p>
 
 <h3>Mouse Controls</h3>
@@ -69,6 +70,7 @@ HELP_DIALOG_TEXT = """
 <p style='margin-left: 20px;'>
 <b>1</b> - Switch to Move tool<br>
 <b>2</b> - Switch to Tape Measure tool<br>
+<b>3</b> - Toggle signal binarization<br>
 <b>Ctrl + C</b> - Copy selected cells (Channel Info tab)<br>
 <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
 <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
