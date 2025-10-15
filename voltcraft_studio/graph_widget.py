@@ -186,6 +186,8 @@ class CustomViewBox(pg.ViewBox):
         self.setMouseEnabled(x=True, y=True)
         self.tape_measure_mode = False  # Flag for tape measure mode
         self.is_dragging = False  # Track drag state for cursor changes
+        # Set default cursor to open hand for move tool
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
     
     def wheelEvent(self, ev, axis=None):
         """
@@ -202,29 +204,37 @@ class CustomViewBox(pg.ViewBox):
         
         # Get keyboard modifiers
         modifiers = ev.modifiers()
+
+        # Temporary store the original cursor state
+        original_cursor = self.cursor()
         
         # Determine which axis to zoom based on modifier keys
         if modifiers == Qt.KeyboardModifier.ControlModifier:
             # Ctrl held - zoom X-axis only
             axis = 0  # X-axis
             mask = [True, False]
+            self.setCursor(Qt.CursorShape.SizeHorCursor)  # Change cursor to horizontal resize
         elif modifiers == Qt.KeyboardModifier.ShiftModifier:
             # Shift held - zoom Y-axis only
             axis = 1  # Y-axis
             mask = [False, True]
+            self.setCursor(Qt.CursorShape.SizeVerCursor)  # Change cursor to vertical resize
         else:
             # No modifier - zoom both axes (default behavior)
             mask = [True, True]
-        
+
         # Temporarily set which axes respond to mouse
         self.setMouseEnabled(x=mask[0], y=mask[1])
-        
+
         # Call parent wheelEvent to handle the actual zooming
         super().wheelEvent(ev, axis=axis)
-        
+
         # Restore both axes to be mouse-enabled
         self.setMouseEnabled(x=True, y=True)
         
+        # Restore original cursor
+        self.setCursor(original_cursor)
+
         # Accept the event
         ev.accept()
     
@@ -251,6 +261,26 @@ class CustomViewBox(pg.ViewBox):
             ev.ignore()
             return
         super().mouseClickEvent(ev)
+
+    def keyPressEvent(self, ev):
+        """Handle key press events to change cursor based on modifier keys"""
+        if ev.key() == Qt.Key.Key_Control:
+            # Change cursor to horizontal resize when Control is pressed
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif ev.key() == Qt.Key.Key_Shift:
+            # Change cursor to vertical resize when Shift is pressed
+            self.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            # Call parent method if no relevant key is pressed
+            super().keyPressEvent(ev)
+
+    def keyReleaseEvent(self, ev):
+        """Handle key release events to reset cursor to open hand"""
+        if ev.key() in (Qt.Key.Key_Control, Qt.Key.Key_Shift):
+            # Reset cursor to open hand
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+        else:
+            super().keyReleaseEvent(ev)
 
 
 class TimeSeriesGraphWidget(QWidget):
