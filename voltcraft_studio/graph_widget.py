@@ -396,11 +396,11 @@ class TimeSeriesGraphWidget(QWidget):
                 border-top: 1px solid #444444;
                 text-align: center;
                 background-color: #2d2d2d;
-                color: #cccccc;
+                color: white;
                 font-size: 10pt;
             }
             QProgressBar::chunk {
-                background-color: #2196f3;
+                background-color: #1e88e5;
             }
         """)
         self.progress_bar.hide()
