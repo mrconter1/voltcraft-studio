@@ -318,6 +318,9 @@ class TimeSeriesGraphWidget(QWidget):
         self.binarize_enabled = False
         self.original_data = None  # Store original data for toggling
         self.channels_info = None  # Store channel info for re-plotting
+        
+        # Channel info overlays
+        self.channel_info_boxes = []  # List of TextItem widgets for channel info
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -381,6 +384,9 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Install event filter to catch mouse press/release for tape measure
         self.plot_widget.viewport().installEventFilter(self)
+        
+        # Connect view range change signal to update channel info box positions
+        self.plot_widget.getViewBox().sigRangeChanged.connect(self._on_view_range_changed)
         
         # Legend will be created when data is loaded
         self.legend = None
@@ -619,12 +625,93 @@ class TimeSeriesGraphWidget(QWidget):
             self.plot_widget.autoRange()
             # Disable auto-ranging after initial display
             self.plot_widget.enableAutoRange(False)
+        
+        # Create channel info overlays if channels provided
+        if channels:
+            self._create_channel_info_overlays(channels)
+    
+    def _create_channel_info_overlays(self, channels: List[ChannelInfo]):
+        """Create floating info boxes for each channel on the graph"""
+        # Clear any existing info boxes
+        for box in self.channel_info_boxes:
+            self.plot_widget.removeItem(box)
+        self.channel_info_boxes.clear()
+        
+        if not channels:
+            return
+        
+        # Position boxes vertically stacked in top-right corner
+        for i, channel in enumerate(channels):
+            # Get channel color
+            color = self.CHANNEL_COLORS[i % len(self.CHANNEL_COLORS)]
+            
+            # Create concise info text with key parameters
+            info_lines = [
+                f"<b>{channel.name}</b>",
+                f"Freq: {channel.frequency}",
+                f"PK-PK: {channel.pk_pk}",
+                f"Avg: {channel.average}",
+            ]
+            info_text = "<br/>".join(info_lines)
+            
+            # Create text item with HTML formatting
+            text_box = pg.TextItem(
+                html=f'<div style="text-align: left;">{info_text}</div>',
+                color=color,
+                fill=(30, 30, 30, 180),  # Semi-transparent dark background
+                border=pg.mkPen(color=color, width=2),
+                anchor=(1.0, 0.0)  # Top-right anchor
+            )
+            
+            self.channel_info_boxes.append(text_box)
+        
+        # Add all boxes to the plot at once
+        for box in self.channel_info_boxes:
+            self.plot_widget.addItem(box, ignoreBounds=True)
+        
+        # Position the boxes - will be updated when view changes
+        self._update_channel_info_positions()
+    
+    def _update_channel_info_positions(self):
+        """Update positions of channel info boxes based on current view"""
+        if not self.channel_info_boxes:
+            return
+        
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        # Get current view range
+        view_range = view_box.viewRange()
+        x_max = view_range[0][1]
+        y_max = view_range[1][1]
+        y_range = view_range[1][1] - view_range[1][0]
+        
+        # Stack boxes vertically from top
+        box_spacing = y_range * 0.15  # 15% of view height between boxes
+        
+        for i, box in enumerate(self.channel_info_boxes):
+            # Position in top-right corner, stacked vertically
+            y_pos = y_max - (i * box_spacing)
+            box.setPos(x_max, y_pos)
+    
+    def _on_view_range_changed(self):
+        """Handle view range changes to update channel info box positions"""
+        self._update_channel_info_positions()
     
     def clear(self):
         """Clear the plot"""
         self.plot_widget.clear()
         self.time_series_data = None
         self.info_label.setText("No data loaded")
+        
+        # Clear channel info overlays
+        for box in self.channel_info_boxes:
+            try:
+                self.plot_widget.removeItem(box)
+            except:
+                pass
+        self.channel_info_boxes.clear()
     
     def set_loading_progress(self, value: int, message: str):
         """Update loading progress bar"""
