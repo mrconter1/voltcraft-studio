@@ -306,6 +306,7 @@ class TimeSeriesGraphWidget(QWidget):
         self.tape_line = None    # Visual line between points
         self.tape_markers = []   # Visual markers at click points
         self.tape_text_item = None  # Text box showing measurement
+        self.tape_coords_item = None  # Text box showing current coordinates
         self.is_dragging_tape = False  # Track if we're dragging to set point 2
         self.mouse_is_pressed = False  # Track if mouse button is currently held down
         
@@ -752,12 +753,8 @@ class TimeSeriesGraphWidget(QWidget):
             self._draw_tape_marker(x_pos, y_pos, is_first=True)
     
     def _on_mouse_moved(self, pos):
-        """Handle mouse move events for dynamic tape measure"""
+        """Handle mouse move events for dynamic tape measure and coordinate display"""
         if self.current_tool != "tape":
-            return
-        
-        # Only update if we're actively dragging (button pressed and dragging mode)
-        if not self.is_dragging_tape or not self.mouse_is_pressed or self.tape_point1 is None:
             return
         
         # Get the scene position
@@ -773,25 +770,83 @@ class TimeSeriesGraphWidget(QWidget):
         x_pos = data_pos.x()
         y_pos = data_pos.y()
         
-        # Update second point dynamically
-        self.tape_point2 = (x_pos, y_pos)
+        # Always update coordinate display
+        self._update_coordinate_display(x_pos, y_pos)
         
-        # Clear previous second marker, line, and text (but keep first marker)
-        if len(self.tape_markers) > 1:
-            self.plot_widget.removeItem(self.tape_markers[1])
-            self.tape_markers.pop()
+        # Only update measurement if we're actively dragging (button pressed and dragging mode)
+        if self.is_dragging_tape and self.mouse_is_pressed and self.tape_point1 is not None:
+            # Update second point dynamically
+            self.tape_point2 = (x_pos, y_pos)
+            
+            # Clear previous second marker, line, and text (but keep first marker)
+            if len(self.tape_markers) > 1:
+                self.plot_widget.removeItem(self.tape_markers[1])
+                self.tape_markers.pop()
+            
+            if self.tape_line is not None:
+                self.plot_widget.removeItem(self.tape_line)
+                self.tape_line = None
+            
+            if self.tape_text_item is not None:
+                self.plot_widget.removeItem(self.tape_text_item)
+                self.tape_text_item = None
+            
+            # Draw new marker and measurement
+            self._draw_tape_marker(x_pos, y_pos, is_first=False)
+            self._draw_tape_measurement()
+    
+    def _update_coordinate_display(self, x: float, y: float):
+        """Update the floating coordinate display at cursor position"""
+        # Convert x (time) to formatted string
+        time_quantity = x * self.interval_quantity
+        time_formatted = format_time_auto(time_quantity, precision=4)
         
-        if self.tape_line is not None:
-            self.plot_widget.removeItem(self.tape_line)
-            self.tape_line = None
+        # Format voltage with appropriate precision
+        voltage_abs = abs(y)
+        if voltage_abs < 0.001 or voltage_abs > 10000:
+            voltage_str = f"{y:.3e} mV"
+        elif voltage_abs < 1:
+            voltage_str = f"{y:.4f} mV"
+        elif voltage_abs < 10:
+            voltage_str = f"{y:.3f} mV"
+        elif voltage_abs < 100:
+            voltage_str = f"{y:.2f} mV"
+        else:
+            voltage_str = f"{y:.1f} mV"
         
-        if self.tape_text_item is not None:
-            self.plot_widget.removeItem(self.tape_text_item)
-            self.tape_text_item = None
+        # Create coordinate text
+        coords_text = f"t = {time_formatted}\nV = {voltage_str}"
         
-        # Draw new marker and measurement
-        self._draw_tape_marker(x_pos, y_pos, is_first=False)
-        self._draw_tape_measurement()
+        # Remove old coordinate item if exists
+        if self.tape_coords_item is not None:
+            self.plot_widget.removeItem(self.tape_coords_item)
+            self.tape_coords_item = None
+        
+        # Create new coordinate text item
+        self.tape_coords_item = pg.TextItem(
+            text=coords_text,
+            color=(150, 200, 255),  # Light blue color
+            fill=(30, 30, 30, 220),  # Slightly more opaque than measurement box
+            border=(150, 200, 255),
+            anchor=(0.0, 1.0)  # Bottom-left anchor, so it appears above and to the right of cursor
+        )
+        
+        # Get view range to determine offset
+        view_box = self.plot_widget.getViewBox()
+        if view_box is not None:
+            view_range = view_box.viewRange()
+            x_range = view_range[0][1] - view_range[0][0]
+            y_range = view_range[1][1] - view_range[1][0]
+            
+            # Position slightly offset from cursor (2% of view range)
+            offset_x = x_range * 0.02
+            offset_y = y_range * 0.02
+            self.tape_coords_item.setPos(x + offset_x, y + offset_y)
+        else:
+            # Fallback: no offset
+            self.tape_coords_item.setPos(x, y)
+        
+        self.plot_widget.addItem(self.tape_coords_item)
     
     def _draw_tape_marker(self, x: float, y: float, is_first: bool):
         """Draw a marker at the clicked point"""
@@ -877,10 +932,15 @@ class TimeSeriesGraphWidget(QWidget):
             self.plot_widget.removeItem(self.tape_line)
             self.tape_line = None
         
-        # Remove text
+        # Remove measurement text
         if self.tape_text_item is not None:
             self.plot_widget.removeItem(self.tape_text_item)
             self.tape_text_item = None
+        
+        # Remove coordinate display
+        if self.tape_coords_item is not None:
+            self.plot_widget.removeItem(self.tape_coords_item)
+            self.tape_coords_item = None
         
         # Reset points and dragging state
         self.tape_point1 = None
