@@ -3,7 +3,7 @@ from typing import List, Tuple
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QTabWidget, QMessageBox, QLabel, QApplication
+    QTabWidget, QMessageBox, QLabel, QApplication, QDialog, QTextEdit
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
@@ -468,13 +468,60 @@ class MainWindow(QMainWindow):
     
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Voltcraft Studio - Help")
-        msg_box.setTextFormat(Qt.TextFormat.RichText)
-        msg_box.setText(HELP_DIALOG_TEXT)
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.exec()
+        help_dialog = QDialog(self)
+        help_dialog.setWindowTitle("Voltcraft Studio - Help")
+
+        # Create Tab Widget
+        tab_widget = QTabWidget(help_dialog)
+
+        # Add tabs
+        tools_tab = QTextEdit()
+        tools_tab.setReadOnly(True)
+        tools_tab.setHtml("""
+        <h3>Tools</h3>
+        <p style='margin-left: 20px;'>
+        <b>Move Tool</b> - Pan and zoom the graph (default)<br>
+        <b>Tape Measure</b> - Measure time and voltage difference between two points<br>
+        <b>Binarize Signal</b> - Convert signal to binary square wave (HIGH/LOW states only)
+        </p>
+        """)
+        tab_widget.addTab(tools_tab, "Tools")
+
+        mouse_controls_tab = QTextEdit()
+        mouse_controls_tab.setReadOnly(True)
+        mouse_controls_tab.setHtml("""
+        <h3>Mouse Controls</h3>
+        <p style='margin-left: 20px;'>
+        <b>Left Drag</b> - Pan the graph (Move tool)<br>
+        <b>Left Click</b> - Place measurement points (Tape tool)<br>
+        <b>Click & Hold</b> - Dynamic second point while dragging (Tape tool)<br>
+        <b>Right Drag</b> - Box zoom selection<br>
+        <b>Mouse Wheel</b> - Zoom both axes
+        </p>
+        """)
+        tab_widget.addTab(mouse_controls_tab, "Mouse Controls")
+
+        shortcuts_tab = QTextEdit()
+        shortcuts_tab.setReadOnly(True)
+        shortcuts_tab.setHtml("""
+        <h3>Keyboard Shortcuts</h3>
+        <p style='margin-left: 20px;'>
+        <b>1</b> - Switch to Move tool<br>
+        <b>2</b> - Switch to Tape Measure tool<br>
+        <b>3</b> - Toggle signal binarization<br>
+        <b>Ctrl + C</b> - Copy selected cells (Channel Info tab)<br>
+        <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
+        <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
+        </p>
+        """)
+        tab_widget.addTab(shortcuts_tab, "Shortcuts")
+
+        # Layout
+        layout = QVBoxLayout(help_dialog)
+        layout.addWidget(tab_widget)
+
+        help_dialog.setLayout(layout)
+        help_dialog.exec()
     
     def _load_file_with_progress(self, file_path: str):
         """Load file in background with progress display"""
