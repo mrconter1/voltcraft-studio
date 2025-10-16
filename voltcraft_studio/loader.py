@@ -21,19 +21,31 @@ class FileLoaderThread(QThread):
             
             self.progress.emit(0, "Opening file...")
             
+            # Detect file format (binary or text)
+            is_binary = ChannelDataParser.is_binary_format(self.file_path)
+            
             # Parse metadata first and emit it immediately
             self.progress.emit(5, "Reading metadata...")
-            channels = ChannelDataParser.parse_metadata_only(self.file_path)
+            if is_binary:
+                channels = ChannelDataParser.parse_binary_metadata_only(self.file_path)
+            else:
+                channels = ChannelDataParser.parse_metadata_only(self.file_path)
             self.metadata_loaded.emit(channels)
             
             # Now parse the full data with progress callback
             def progress_callback(percent: int, message: str):
                 self.progress.emit(percent, message)
             
-            channels, time_series = ChannelDataParser.parse_streaming(
-                self.file_path, 
-                progress_callback
-            )
+            if is_binary:
+                channels, time_series = ChannelDataParser.parse_binary_streaming(
+                    self.file_path, 
+                    progress_callback
+                )
+            else:
+                channels, time_series = ChannelDataParser.parse_streaming(
+                    self.file_path, 
+                    progress_callback
+                )
             
             self.progress.emit(100, "Complete!")
             self.finished.emit(channels, time_series)

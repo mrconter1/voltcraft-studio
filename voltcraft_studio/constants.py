@@ -39,8 +39,8 @@ CHANNEL_PARAMETERS = [
 ]
 
 # File dialog settings
-FILE_DIALOG_TITLE = "Open Text File"
-FILE_DIALOG_FILTER = "Text Files (*.txt);;All Files (*.*)"
+FILE_DIALOG_TITLE = "Open Oscilloscope Data File"
+FILE_DIALOG_FILTER = "Supported Files (*.txt *.bin);;Text Files (*.txt);;Binary Files (*.bin);;All Files (*.*)"
 
 # Parser settings
 PARSER_BATCH_SIZE = 100000  # Number of lines to process in each batch

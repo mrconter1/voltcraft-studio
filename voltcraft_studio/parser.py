@@ -1,6 +1,10 @@
 """Parser for oscilloscope channel data files"""
 from typing import List, Tuple, Callable, Optional
 import numpy as np
+import struct
+import json
+import os
+import re
 from .models import ChannelInfo, TimeSeriesData
 from .constants import (
     PARSER_BATCH_SIZE,
@@ -14,6 +18,247 @@ from .constants import (
 
 class ChannelDataParser:
     """Parses oscilloscope channel metadata from file content"""
+    
+    MAGIC_HEADER = b'SPBXDS'
+    
+    @staticmethod
+    def is_binary_format(file_path: str) -> bool:
+        """
+        Check if file is in OWON SPBXDS binary format
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Returns:
+            True if file has SPBXDS magic header, False otherwise
+        """
+        try:
+            with open(file_path, 'rb') as f:
+                header = f.read(6)
+                return header == ChannelDataParser.MAGIC_HEADER
+        except:
+            return False
+    
+    @staticmethod
+    def parse_binary_metadata_only(file_path: str) -> List[ChannelInfo]:
+        """
+        Parse only the channel metadata from OWON binary file (fast)
+        
+        Args:
+            file_path: Path to the binary file to parse
+            
+        Returns:
+            List of ChannelInfo objects
+        """
+        with open(file_path, 'rb') as f:
+            # Read and validate magic header
+            magic = f.read(6)
+            if magic != ChannelDataParser.MAGIC_HEADER:
+                raise ValueError("Invalid SPBXDS file format")
+            
+            # Read JSON length (4 bytes, little-endian)
+            json_length_bytes = f.read(4)
+            json_length = int.from_bytes(json_length_bytes, 'little')
+            
+            # Read and parse JSON
+            json_data_bytes = f.read(json_length)
+        
+        # Decode JSON with error handling
+        json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+        
+        # Fix common JSON issues from Hantek firmware
+        # 1. Remove trailing commas before ] or } (invalid JSON but common firmware bug)
+        json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+        
+        # 2. Try to find and trim to the last valid JSON close brace
+        try:
+            json_data = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Find the last '}' which should be the end of JSON
+            last_brace = json_text.rfind('}')
+            if last_brace != -1:
+                json_text = json_text[:last_brace + 1]
+                json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+                json_data = json.loads(json_text)
+            else:
+                raise ValueError("Could not parse JSON metadata from binary file")
+        
+        # Create ChannelInfo objects from JSON channel data
+        channels = []
+        for channel_info in json_data.get('channel', []):
+            channel = ChannelInfo(
+                name=channel_info.get('Index', '?'),
+                frequency=channel_info.get('Freq', '?'),
+                period=channel_info.get('Cyc', '?'),
+                pk_pk='?',
+                average='?',
+                vertical_pos=channel_info.get('Reference_Zero', '?'),
+                probe_attenuation=channel_info.get('Probe_Magnification', '?'),
+                voltage_per_adc=channel_info.get('Voltage_Rate', '?'),
+                time_interval=channel_info.get('Adc_Data_Time', '?')
+            )
+            channels.append(channel)
+        
+        return channels
+    
+    @staticmethod
+    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[List[ChannelInfo], TimeSeriesData]:
+        """
+        Parse channel data from OWON binary file with streaming and progress updates
+        
+        Args:
+            file_path: Path to the binary file to parse
+            progress_callback: Optional callback function(percent, message) for progress updates
+            
+        Returns:
+            Tuple of (List of ChannelInfo objects, TimeSeriesData object)
+        """
+        file_size = os.path.getsize(file_path)
+        
+        if progress_callback:
+            progress_callback(PARSER_PROGRESS_METADATA_START, "Reading binary header...")
+        
+        with open(file_path, 'rb') as f:
+            # Read and validate magic header
+            magic = f.read(6)
+            if magic != ChannelDataParser.MAGIC_HEADER:
+                raise ValueError("Invalid SPBXDS file format: incorrect magic header")
+            
+            # Read JSON length (4 bytes, little-endian)
+            json_length_bytes = f.read(4)
+            json_length = int.from_bytes(json_length_bytes, 'little')
+            
+            # Read and parse JSON
+            if progress_callback:
+                progress_callback(PARSER_PROGRESS_METADATA_DONE, "Parsing metadata...")
+            
+            json_data_bytes = f.read(json_length)
+            
+            # Decode JSON with error handling
+            json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+            
+            # Fix common JSON issues from Hantek firmware
+            # 1. Remove trailing commas before ] or } (invalid JSON but common firmware bug)
+            json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+            
+            # 2. Try to find and trim to the last valid JSON close brace
+            try:
+                json_data = json.loads(json_text)
+            except json.JSONDecodeError:
+                # Find the last '}' which should be the end of JSON
+                last_brace = json_text.rfind('}')
+                if last_brace != -1:
+                    json_text = json_text[:last_brace + 1]
+                    json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+                    json_data = json.loads(json_text)
+                else:
+                    raise ValueError("Could not parse JSON metadata from binary file")
+            
+            # Extract channel information
+            channel_configs = json_data.get('channel', [])
+            channel_names = [ch.get('Index', f'CH{i}') for i, ch in enumerate(channel_configs)]
+            
+            # Create ChannelInfo objects
+            channels = []
+            for channel_info in channel_configs:
+                channel = ChannelInfo(
+                    name=channel_info.get('Index', '?'),
+                    frequency=channel_info.get('Freq', '?'),
+                    period=channel_info.get('Cyc', '?'),
+                    pk_pk='?',
+                    average='?',
+                    vertical_pos=channel_info.get('Reference_Zero', '?'),
+                    probe_attenuation=channel_info.get('Probe_Magnification', '?'),
+                    voltage_per_adc=channel_info.get('Voltage_Rate', '?'),
+                    time_interval=channel_info.get('Adc_Data_Time', '?')
+                )
+                channels.append(channel)
+            
+            # Parse binary channel data
+            if progress_callback:
+                progress_callback(PARSER_PROGRESS_DATA_START, "Parsing channel data...")
+            
+            offset = 10 + json_length
+            channel_data = {name: [] for name in channel_names}
+            
+            last_progress = PARSER_PROGRESS_DATA_START
+            
+            for ch_idx, channel_config in enumerate(channel_configs):
+                # Skip channels that are not available
+                if channel_config.get('Availability_Flag', '').upper() != 'TRUE':
+                    continue
+                
+                # Read channel data length (4 bytes, little-endian)
+                if offset + 4 > file_size:
+                    break
+                
+                f.seek(offset)
+                data_length_bytes = f.read(4)
+                if len(data_length_bytes) < 4:
+                    break
+                
+                data_length = int.from_bytes(data_length_bytes, 'little')
+                offset += 4
+                
+                # Extract voltage conversion parameters
+                voltage_rate_str = channel_config.get('Voltage_Rate', '0.781250mv')
+                probe_mag_str = channel_config.get('Probe_Magnification', '1X')
+                
+                # Parse voltage rate (e.g., "0.781250mv" -> 0.000781250)
+                voltage_rate = float(voltage_rate_str.replace('mv', '').replace('mV', '')) / 1000.0
+                
+                # Parse probe magnification (e.g., "10X" -> 10)
+                probe_mag = float(probe_mag_str.replace('X', '').replace('x', ''))
+                
+                # Read and convert samples
+                channel_name = channel_config.get('Index', f'CH{ch_idx}')
+                sample_count = data_length // 2
+                
+                for i in range(sample_count):
+                    f.seek(offset + i * 2)
+                    sample_bytes = f.read(2)
+                    if len(sample_bytes) < 2:
+                        break
+                    
+                    # Unpack as 16-bit signed integer (little-endian)
+                    raw_sample = struct.unpack('<h', sample_bytes)[0]
+                    
+                    # Convert to voltage
+                    voltage = raw_sample * voltage_rate * probe_mag
+                    channel_data[channel_name].append(voltage)
+                
+                offset += data_length
+                
+                # Update progress
+                if progress_callback and file_size > 0:
+                    progress_range = PARSER_PROGRESS_DATA_END - PARSER_PROGRESS_DATA_START
+                    percent = PARSER_PROGRESS_DATA_START + int((ch_idx / len(channel_configs)) * progress_range)
+                    percent = min(PARSER_PROGRESS_DATA_END, percent)
+                    
+                    if percent != last_progress:
+                        progress_callback(percent, f"Parsing channel {channel_name}...")
+                        last_progress = percent
+        
+        # Phase 3: Convert to numpy arrays
+        if progress_callback:
+            progress_callback(PARSER_PROGRESS_NUMPY_CONVERSION, "Converting to arrays...")
+        
+        # Create indices array from the longest channel
+        max_length = max((len(data) for data in channel_data.values()), default=0)
+        indices = np.arange(max_length, dtype=np.int32)
+        
+        # Ensure all channels have the same length
+        for channel_name in channel_names:
+            if len(channel_data[channel_name]) < max_length:
+                channel_data[channel_name].extend([np.nan] * (max_length - len(channel_data[channel_name])))
+        
+        time_series = TimeSeriesData(
+            indices=indices,
+            channel_data={name: np.array(data, dtype=np.float32) for name, data in channel_data.items()},
+            channel_names=channel_names
+        )
+        
+        return channels, time_series
     
     @staticmethod
     def parse_metadata_only(file_path: str) -> List[ChannelInfo]:
