@@ -274,4 +274,50 @@ class IconFactory:
         
         painter.end()
         return QIcon(pixmap)
+    
+    @staticmethod
+    def create_decode_icon() -> QIcon:
+        """Create a decode/mapping icon (gears with circuit pattern)"""
+        pixmap = QPixmap(FOLDER_ICON_SIZE, FOLDER_ICON_SIZE)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw main circle (decoder symbol)
+        painter.setPen(QPen(COLOR_GOLD, 2))
+        painter.setBrush(QColor(100, 150, 200))
+        painter.drawEllipse(16, 16, 32, 32)
+        
+        # Draw circuit pattern inside - three signal types as boxes
+        painter.setPen(QPen(QColor(255, 255, 255), 1.5))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        
+        # Top left box - SK
+        painter.drawRect(20, 20, 8, 8)
+        painter.setFont(QFont("Arial", 5))
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(20, 20, 8, 8, Qt.AlignmentFlag.AlignCenter, "S")
+        
+        # Top right box - CS
+        painter.drawRect(36, 20, 8, 8)
+        painter.drawText(36, 20, 8, 8, Qt.AlignmentFlag.AlignCenter, "C")
+        
+        # Bottom left box - DI
+        painter.drawRect(20, 36, 8, 8)
+        painter.drawText(20, 36, 8, 8, Qt.AlignmentFlag.AlignCenter, "D")
+        
+        # Bottom right box - DO
+        painter.drawRect(36, 36, 8, 8)
+        painter.drawText(36, 36, 8, 8, Qt.AlignmentFlag.AlignCenter, "O")
+        
+        # Draw connecting lines
+        painter.setPen(QPen(QColor(255, 255, 100), 1))
+        painter.drawLine(28, 24, 36, 24)  # Top
+        painter.drawLine(28, 40, 36, 40)  # Bottom
+        painter.drawLine(24, 28, 24, 36)  # Left
+        painter.drawLine(40, 28, 40, 36)  # Right
+        
+        painter.end()
+        return QIcon(pixmap)
 

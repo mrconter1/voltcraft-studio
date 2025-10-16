@@ -18,6 +18,7 @@ from .constants import (
     FILE_DIALOG_TITLE, FILE_DIALOG_FILTER,
     HELP_DIALOG_TEXT
 )
+from .decode_dialog import DecodeDialog
 
 
 class MainWindow(QMainWindow):
@@ -180,6 +181,7 @@ class MainWindow(QMainWindow):
         self.loader_thread = None
         self.current_file_path = None
         self.device_info = None  # Store device info from bin files
+        self.current_channels = None  # Store current loaded channels
         
         # Tool state
         self.current_tool = "move"  # Default tool is move
@@ -187,6 +189,7 @@ class MainWindow(QMainWindow):
         # Disable tape measure and binarize until data is loaded
         self.tape_action.setEnabled(False)
         self.binarize_action.setEnabled(False)
+        self.decode_action.setEnabled(False)
         
         # Load initial file if provided
         if initial_file:
@@ -274,6 +277,12 @@ class MainWindow(QMainWindow):
         self.binarize_action.setShortcut("3")
         self.binarize_action.triggered.connect(self.toggle_binarize)
         toolbar.addAction(self.binarize_action)
+
+        # Create decode action
+        self.decode_action = QAction(IconFactory.create_decode_icon(), "Decode Signal", self)
+        self.decode_action.setToolTip("Decode signal using a predefined dictionary (e.g., ASCII, HEX, etc.)")
+        self.decode_action.triggered.connect(self.show_decode_dialog)
+        toolbar.addAction(self.decode_action)
         
         # Add separator
         toolbar.addSeparator()
@@ -547,6 +556,24 @@ class MainWindow(QMainWindow):
         is_binarized = self.binarize_action.isChecked()
         self.graph_widget.set_binarize(is_binarized)
     
+    def show_decode_dialog(self):
+        """Show the decode signal dialog"""
+        if self.current_channels is None or len(self.current_channels) == 0:
+            QMessageBox.warning(
+                self,
+                "No Data Loaded",
+                "No time series data is currently loaded. Please load a file first.",
+                QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        # Extract channel names from channel info objects
+        channel_names = [ch.name for ch in self.current_channels]
+        
+        # Create and show decode dialog with app icon
+        self.decode_dialog = DecodeDialog(channel_names, self, IconFactory.create_window_icon())
+        self.decode_dialog.exec()
+    
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
         help_dialog = QDialog(self)
@@ -632,6 +659,7 @@ class MainWindow(QMainWindow):
         """Handle metadata loaded (before full data)"""
         # Store device info
         self.device_info = device_info
+        self.current_channels = channels # Store channels for decode dialog
         
         # Display channel info in table immediately
         # Use appropriate display method based on whether we have bin metadata
@@ -654,6 +682,7 @@ class MainWindow(QMainWindow):
         # Enable tape measure and binarize tools now that we have data
         self.tape_action.setEnabled(True)
         self.binarize_action.setEnabled(True)
+        self.decode_action.setEnabled(True) # Enable decode action
         
         # Hide progress bar
         self.graph_widget.hide_progress()
