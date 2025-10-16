@@ -3,6 +3,18 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 
 
+# NMC9307 Instruction Set
+OPCODE_MAP = {
+    0b0001: "WRITE",      # Write register
+    0b0010: "READ",       # Read register
+    0b0011: "ERASE",      # Erase register
+    0b0100: "ERAL",       # Erase all
+    0b0101: "WRAL",       # Write all
+    0b1000: "EWDS",       # Erase/Write disable
+    0b1001: "EWEN",       # Erase/Write enable
+}
+
+
 class DecodeProcessor:
     """Process decoded signal patterns with binarization"""
     
@@ -37,6 +49,103 @@ class DecodeProcessor:
         return rising_edges
     
     @staticmethod
+    def parse_nmc9307_instruction(bits_str: str) -> Dict[str, any]:
+        """
+        Parse NMC9307 instruction from bits.
+        Format: 1 dummy bit (0) + 1 start bit (1) + 4-bit opcode + 4-bit address = 10 bits
+        Then optional 16-bit data for WRITE/WRAL instructions
+        
+        Args:
+            bits_str: Binary string with at least 10 bits
+        
+        Returns:
+            Dictionary with instruction details
+        """
+        if len(bits_str) < 10:
+            return None
+        
+        # Extract components (10-bit format: dummy + start + opcode + address)
+        dummy_bit = bits_str[0]
+        start_bit = bits_str[1]
+        opcode_bits = bits_str[2:6]
+        address_bits = bits_str[6:10]
+        
+        opcode = int(opcode_bits, 2)
+        address = int(address_bits, 2)
+        
+        return {
+            "dummy_bit": dummy_bit,
+            "start_bit": start_bit,
+            "opcode": opcode,
+            "opcode_bits": opcode_bits,
+            "address": address,
+            "address_bits": address_bits,
+            "instruction_name": DecodeProcessor._get_instruction_name(opcode),
+            "valid": start_bit == "1" and dummy_bit == "0"
+        }
+    
+    @staticmethod
+    def _get_instruction_name(opcode: int) -> str:
+        """
+        Get instruction name from 4-bit opcode.
+        
+        Args:
+            opcode: 4-bit opcode value
+        
+        Returns:
+            Instruction name string
+        """
+        # Check upper 2 bits for main opcode
+        upper_bits = (opcode >> 2) & 0b11
+        
+        if upper_bits == 0b10:  # 10xx
+            return "READ"
+        elif upper_bits == 0b01:  # 01xx
+            return "WRITE"
+        elif upper_bits == 0b11:  # 11xx
+            return "ERASE"
+        elif opcode == 0b0011:
+            return "EWEN"
+        elif opcode == 0b0000:
+            return "EWDS"
+        elif opcode == 0b0010:
+            return "ERAL"
+        elif opcode == 0b0001:
+            return "WRAL"
+        else:
+            return "UNKNOWN"
+    
+    @staticmethod
+    def get_instruction_expected_length(opcode: int) -> Tuple[int, int]:
+        """
+        Get expected DI and DO lengths for an instruction.
+        
+        Args:
+            opcode: 4-bit opcode value
+        
+        Returns:
+            Tuple (di_bits, do_bits) expected lengths
+        """
+        upper_bits = (opcode >> 2) & 0b11
+        
+        if upper_bits == 0b01:  # 01xx = WRITE
+            return (26, 0)  # 10-bit instruction + 16-bit data
+        elif upper_bits == 0b10:  # 10xx = READ
+            return (10, 17)  # 10-bit instruction, then 1 dummy bit + 16-bit data output
+        elif upper_bits == 0b11:  # 11xx = ERASE
+            return (10, 0)
+        elif opcode == 0b0001:  # WRAL
+            return (26, 0)  # 10-bit instruction + 16-bit data
+        elif opcode == 0b0010:  # ERAL
+            return (10, 0)
+        elif opcode == 0b0011:  # EWEN
+            return (10, 0)
+        elif opcode == 0b0000:  # EWDS
+            return (10, 0)
+        else:
+            return (10, 0)  # Default: instruction only
+    
+    @staticmethod
     def process_decode_binary(
         sk_data: np.ndarray,
         cs_data: np.ndarray,
@@ -48,6 +157,7 @@ class DecodeProcessor:
         """
         Decode binary data using SK as clock signal, grouped by CS transactions.
         On each SK rising edge while CS is HIGH, sample DI and DO.
+        Automatically parses NMC9307 instructions and separates data.
         
         Args:
             sk_data: SK (clock) channel samples
@@ -90,6 +200,9 @@ class DecodeProcessor:
                 current_transaction = {
                     "start_sample": i,
                     "start_time": i * time_interval_us,
+                    "raw_di_bits": [],
+                    "raw_do_bits": [],
+                    "instruction": None,
                     "di_bits": [],
                     "do_bits": [],
                     "end_sample": i,
@@ -103,20 +216,23 @@ class DecodeProcessor:
                 
                 if di_binary is not None:
                     bit_value = di_binary[i]
-                    current_transaction["di_bits"].append(str(bit_value))
+                    current_transaction["raw_di_bits"].append(str(bit_value))
                 
                 if do_binary is not None:
                     bit_value = do_binary[i]
-                    current_transaction["do_bits"].append(str(bit_value))
+                    current_transaction["raw_do_bits"].append(str(bit_value))
             
             # End of transaction (CS HIGH to LOW transition)
             if cs_transitions[i] == -1:  # HIGH to LOW
                 if current_transaction is not None:
+                    # Parse instruction and separate DI/DO
+                    DecodeProcessor._parse_transaction(current_transaction)
                     transactions.append(current_transaction)
                     current_transaction = None
         
         # Don't forget the last transaction if CS is still active at the end
         if current_transaction is not None:
+            DecodeProcessor._parse_transaction(current_transaction)
             transactions.append(current_transaction)
         
         return {
@@ -125,6 +241,38 @@ class DecodeProcessor:
             "di_enabled": di_data is not None,
             "do_enabled": do_data is not None
         }
+    
+    @staticmethod
+    def _parse_transaction(transaction: Dict[str, any]):
+        """
+        Parse instruction and separate DI/DO bits in a transaction.
+        Instruction format: 1 dummy bit + 1 start bit + 4-bit opcode + 4-bit address = 10 bits
+        
+        Args:
+            transaction: Transaction dictionary to parse in-place
+        """
+        di_bits_str = "".join(transaction["raw_di_bits"])
+        do_bits_str = "".join(transaction["raw_do_bits"])
+        
+        # Parse instruction from first 10 DI bits
+        if len(di_bits_str) >= 10:
+            instruction = DecodeProcessor.parse_nmc9307_instruction(di_bits_str[:10])
+            transaction["instruction"] = instruction
+            
+            if instruction and instruction["valid"]:
+                opcode = instruction["opcode"]
+                expected_di, expected_do = DecodeProcessor.get_instruction_expected_length(opcode)
+                
+                # Separate bits based on expected lengths
+                transaction["di_bits"] = di_bits_str[:expected_di]
+                transaction["do_bits"] = do_bits_str[:expected_do]
+            else:
+                # Invalid instruction (start bit != 1 or dummy bit != 0)
+                transaction["di_bits"] = di_bits_str[:10]  # Show at least the instruction part
+                transaction["do_bits"] = ""
+        else:
+            transaction["di_bits"] = di_bits_str
+            transaction["do_bits"] = ""
     
     @staticmethod
     def _parse_time_interval(interval_str: str) -> float:
@@ -161,7 +309,7 @@ class DecodeProcessor:
         time_interval_str: str
     ):
         """
-        Print binary decode results grouped by CS transactions.
+        Print binary decode results grouped by CS transactions with instruction parsing.
         
         Args:
             decode_results: Dictionary with transaction data from process_decode_binary
@@ -172,9 +320,9 @@ class DecodeProcessor:
         di_enabled = decode_results["di_enabled"]
         do_enabled = decode_results["do_enabled"]
         
-        print("\n" + "=" * 100)
-        print("SERIAL DATA DECODE - BINARY DECODING (GROUPED BY CS TRANSACTIONS)")
-        print("=" * 100)
+        print("\n" + "=" * 110)
+        print("SERIAL DATA DECODE - NMC9307 PROTOCOL (GROUPED BY CS TRANSACTIONS)")
+        print("=" * 110)
         
         # Print configuration
         print("\n📋 Configuration:")
@@ -198,26 +346,49 @@ class DecodeProcessor:
                 
                 print(f"  Transaction {tx_idx}: (CS Active: {start_time:.1f}μs → {end_time:.1f}μs)")
                 
+                # Print instruction if available
+                if tx["instruction"]:
+                    instr = tx["instruction"]
+                    if instr["valid"]:
+                        print(f"    📌 Instruction: {instr['instruction_name']} (Dummy: {instr['dummy_bit']}, Start: {instr['start_bit']}, Opcode: {instr['opcode_bits']}, Address: {instr['address_bits']} = {instr['address']})")
+                    else:
+                        print(f"    ⚠️  Invalid instruction (Dummy: {instr['dummy_bit']}, Start: {instr['start_bit']} - expected Dummy=0, Start=1)")
+                
                 # Print DI bits
                 if di_enabled and tx["di_bits"]:
-                    di_sequence = "".join(tx["di_bits"])
+                    di_sequence = tx["di_bits"]
                     di_bits_with_spaces = " ".join([di_sequence[i:i+8] for i in range(0, len(di_sequence), 8)])
                     print(f"    📥 DI: {di_bits_with_spaces} ({len(tx['di_bits'])} bits)")
                     total_di_bits += len(tx["di_bits"])
                 
                 # Print DO bits
                 if do_enabled and tx["do_bits"]:
-                    do_sequence = "".join(tx["do_bits"])
-                    do_bits_with_spaces = " ".join([do_sequence[i:i+8] for i in range(0, len(do_sequence), 8)])
-                    print(f"    📤 DO: {do_bits_with_spaces} ({len(tx['do_bits'])} bits)")
-                    total_do_bits += len(tx["do_bits"])
+                    do_sequence = tx["do_bits"]
+                    
+                    # For READ instructions, skip the first dummy bit
+                    if tx["instruction"] and tx["instruction"]["valid"]:
+                        instr_name = tx["instruction"]["instruction_name"]
+                        if instr_name == "READ":
+                            # Skip first dummy bit, take only 16 data bits
+                            do_data = do_sequence[1:17] if len(do_sequence) > 1 else ""
+                            do_bits_with_spaces = " ".join([do_data[i:i+8] for i in range(0, len(do_data), 8)])
+                            print(f"    📤 DO: {do_bits_with_spaces} ({len(do_data)} bits - D15→D0)")
+                            total_do_bits += len(do_data)
+                        else:
+                            do_bits_with_spaces = " ".join([do_sequence[i:i+8] for i in range(0, len(do_sequence), 8)])
+                            print(f"    📤 DO: {do_bits_with_spaces} ({len(do_sequence)} bits)")
+                            total_do_bits += len(do_sequence)
+                    else:
+                        do_bits_with_spaces = " ".join([do_sequence[i:i+8] for i in range(0, len(do_sequence), 8)])
+                        print(f"    📤 DO: {do_bits_with_spaces} ({len(do_sequence)} bits)")
+                        total_do_bits += len(do_sequence)
                 
                 print()
         else:
             print("\n  ⚠️  No transactions detected. Check channel mapping and signal levels.")
         
         # Summary
-        print("=" * 100)
+        print("=" * 110)
         if transactions:
             print(f"✅ Summary:")
             print(f"  Total Transactions: {len(transactions)}")
@@ -227,7 +398,7 @@ class DecodeProcessor:
                 print(f"  DO Total Bits: {total_do_bits} across {len([tx for tx in transactions if tx['do_bits']])} transaction(s)")
         else:
             print("⚠️  No bits decoded. Check channel mapping and signal levels.")
-        print("=" * 100 + "\n")
+        print("=" * 110 + "\n")
     
     @staticmethod
     def _bits_to_hex(bit_string: str) -> str:
