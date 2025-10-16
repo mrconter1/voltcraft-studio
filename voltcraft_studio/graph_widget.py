@@ -508,9 +508,8 @@ class TimeSeriesGraphWidget(QWidget):
             # Configure the time axis for dynamic unit scaling
             self.time_axis.set_time_interval(interval_quantity)
             
-            # Calculate actual time array (index * time_interval)
-            # Keep in original units for now
-            time_values = time_series_data.indices * interval_value
+            # Use raw indices for the x-axis; the DynamicTimeAxisItem will handle the conversion to time
+            time_values = time_series_data.indices
             
             # Set X-axis label (just "Time" - units shown on tick values)
             self.plot_widget.setLabel('bottom', 'Time')
