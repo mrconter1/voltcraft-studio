@@ -44,9 +44,9 @@ class DecodeProcessor:
         do_data: Optional[np.ndarray],
         time_interval_str: str,
         sample_count: int
-    ) -> Dict[str, List[Tuple[int, float, str, str]]]:
+    ) -> Dict[str, any]:
         """
-        Decode binary data using SK as clock signal.
+        Decode binary data using SK as clock signal, grouped by CS transactions.
         On each SK rising edge while CS is HIGH, sample DI and DO.
         
         Args:
@@ -58,52 +58,73 @@ class DecodeProcessor:
             sample_count: Total number of samples
         
         Returns:
-            Dictionary with keys "DI" and/or "DO", each containing list of 
-            (sample_index, time_us, bit_value, description)
+            Dictionary with transaction data grouped by CS activation
         """
         # Parse time interval
         time_interval_us = DecodeProcessor._parse_time_interval(time_interval_str)
         
-        # Binarize all signals
+        # Binarize all signals ONCE at the start
         sk_binary = DecodeProcessor.binarize_signal(sk_data)
         cs_binary = DecodeProcessor.binarize_signal(cs_data)
+        
+        # Binarize DI and DO if provided
+        di_binary = DecodeProcessor.binarize_signal(di_data) if di_data is not None else None
+        do_binary = DecodeProcessor.binarize_signal(do_data) if do_data is not None else None
         
         # Detect rising edges on SK
         sk_rising = DecodeProcessor.detect_rising_edge(sk_binary)
         
-        results = {}
+        # Detect CS transitions (HIGH to LOW for end of transaction, LOW to HIGH for start)
+        cs_transitions = np.diff(cs_binary)  # -1 for HIGH->LOW, 1 for LOW->HIGH
+        cs_transitions = np.insert(cs_transitions, 0, 0)
         
-        # Decode DI if provided
-        if di_data is not None:
-            di_binary = DecodeProcessor.binarize_signal(di_data)
-            di_bits = []
+        # Group bits by CS transactions
+        transactions = []
+        current_transaction = None
+        
+        for i in range(len(sk_binary)):
+            # Start of new transaction (CS LOW to HIGH transition)
+            if cs_transitions[i] == 1:  # LOW to HIGH
+                if current_transaction is not None:
+                    transactions.append(current_transaction)
+                current_transaction = {
+                    "start_sample": i,
+                    "start_time": i * time_interval_us,
+                    "di_bits": [],
+                    "do_bits": [],
+                    "end_sample": i,
+                    "end_time": i * time_interval_us
+                }
             
-            for i in range(len(sk_binary)):
-                # On SK rising edge AND CS is HIGH
-                if sk_rising[i] == 1 and cs_binary[i] == 1:
+            # Collect bits on SK rising edge while CS is HIGH
+            if sk_rising[i] == 1 and cs_binary[i] == 1 and current_transaction is not None:
+                current_transaction["end_sample"] = i
+                current_transaction["end_time"] = i * time_interval_us
+                
+                if di_binary is not None:
                     bit_value = di_binary[i]
-                    time_us = i * time_interval_us
-                    desc = f"DI={bit_value} (bit received)"
-                    di_bits.append((i, time_us, str(bit_value), desc))
-            
-            results["DI"] = di_bits
-        
-        # Decode DO if provided
-        if do_data is not None:
-            do_binary = DecodeProcessor.binarize_signal(do_data)
-            do_bits = []
-            
-            for i in range(len(sk_binary)):
-                # On SK rising edge AND CS is HIGH
-                if sk_rising[i] == 1 and cs_binary[i] == 1:
+                    current_transaction["di_bits"].append(str(bit_value))
+                
+                if do_binary is not None:
                     bit_value = do_binary[i]
-                    time_us = i * time_interval_us
-                    desc = f"DO={bit_value} (bit transmitted)"
-                    do_bits.append((i, time_us, str(bit_value), desc))
+                    current_transaction["do_bits"].append(str(bit_value))
             
-            results["DO"] = do_bits
+            # End of transaction (CS HIGH to LOW transition)
+            if cs_transitions[i] == -1:  # HIGH to LOW
+                if current_transaction is not None:
+                    transactions.append(current_transaction)
+                    current_transaction = None
         
-        return results
+        # Don't forget the last transaction if CS is still active at the end
+        if current_transaction is not None:
+            transactions.append(current_transaction)
+        
+        return {
+            "transactions": transactions,
+            "time_interval_us": time_interval_us,
+            "di_enabled": di_data is not None,
+            "do_enabled": do_data is not None
+        }
     
     @staticmethod
     def _parse_time_interval(interval_str: str) -> float:
@@ -135,21 +156,25 @@ class DecodeProcessor:
     
     @staticmethod
     def print_decode_results_binary(
-        results: Dict[str, List[Tuple[int, float, str, str]]],
+        decode_results: Dict[str, any],
         channel_mapping: Dict[str, str],
         time_interval_str: str
     ):
         """
-        Print binary decode results to terminal in a formatted way.
+        Print binary decode results grouped by CS transactions.
         
         Args:
-            results: Dictionary with "DI" and/or "DO" keys containing bit events
+            decode_results: Dictionary with transaction data from process_decode_binary
             channel_mapping: Mapping of channels to signal types
             time_interval_str: Time interval for display
         """
-        print("\n" + "=" * 90)
-        print("SERIAL DATA DECODE - BINARY DECODING")
-        print("=" * 90)
+        transactions = decode_results["transactions"]
+        di_enabled = decode_results["di_enabled"]
+        do_enabled = decode_results["do_enabled"]
+        
+        print("\n" + "=" * 100)
+        print("SERIAL DATA DECODE - BINARY DECODING (GROUPED BY CS TRANSACTIONS)")
+        print("=" * 100)
         
         # Print configuration
         print("\n📋 Configuration:")
@@ -159,49 +184,50 @@ class DecodeProcessor:
         for channel, signal_type in sorted(channel_mapping.items()):
             print(f"    {channel:<15} → {signal_type}")
         
-        # Print DI bits
-        if "DI" in results and results["DI"]:
-            di_bits = results["DI"]
-            di_sequence = "".join([bit[2] for bit in di_bits])
-            print(f"\n📥 Data Input (DI) - {len(di_bits)} bits:")
-            print(f"  Binary Sequence: {di_sequence}")
-            print(f"  Hex (8-bit):     {DecodeProcessor._bits_to_hex(di_sequence)}")
-            print(f"\n  Bit Details:")
-            print("  Bit # | Sample #    | Time (μs)     | Value | Description")
-            print("  " + "-" * 75)
-            for bit_idx, (sample_idx, time_us, bit_val, desc) in enumerate(di_bits):
-                print(f"  {bit_idx:<5} | {sample_idx:<11} | {time_us:>13.4f} | {bit_val:>5} | {desc}")
+        # Print transactions
+        if transactions:
+            print(f"\n📊 TRANSACTIONS (Total: {len(transactions)}):")
+            print()
+            
+            total_di_bits = 0
+            total_do_bits = 0
+            
+            for tx_idx, tx in enumerate(transactions, 1):
+                start_time = tx["start_time"]
+                end_time = tx["end_time"]
+                
+                print(f"  Transaction {tx_idx}: (CS Active: {start_time:.1f}μs → {end_time:.1f}μs)")
+                
+                # Print DI bits
+                if di_enabled and tx["di_bits"]:
+                    di_sequence = "".join(tx["di_bits"])
+                    di_bits_with_spaces = " ".join([di_sequence[i:i+8] for i in range(0, len(di_sequence), 8)])
+                    print(f"    📥 DI: {di_bits_with_spaces} ({len(tx['di_bits'])} bits)")
+                    total_di_bits += len(tx["di_bits"])
+                
+                # Print DO bits
+                if do_enabled and tx["do_bits"]:
+                    do_sequence = "".join(tx["do_bits"])
+                    do_bits_with_spaces = " ".join([do_sequence[i:i+8] for i in range(0, len(do_sequence), 8)])
+                    print(f"    📤 DO: {do_bits_with_spaces} ({len(tx['do_bits'])} bits)")
+                    total_do_bits += len(tx["do_bits"])
+                
+                print()
         else:
-            print(f"\n📥 Data Input (DI): No data (not mapped)")
-        
-        # Print DO bits
-        if "DO" in results and results["DO"]:
-            do_bits = results["DO"]
-            do_sequence = "".join([bit[2] for bit in do_bits])
-            print(f"\n📤 Data Output (DO) - {len(do_bits)} bits:")
-            print(f"  Binary Sequence: {do_sequence}")
-            print(f"  Hex (8-bit):     {DecodeProcessor._bits_to_hex(do_sequence)}")
-            print(f"\n  Bit Details:")
-            print("  Bit # | Sample #    | Time (μs)     | Value | Description")
-            print("  " + "-" * 75)
-            for bit_idx, (sample_idx, time_us, bit_val, desc) in enumerate(do_bits):
-                print(f"  {bit_idx:<5} | {sample_idx:<11} | {time_us:>13.4f} | {bit_val:>5} | {desc}")
-        else:
-            print(f"\n📤 Data Output (DO): No data (not mapped)")
+            print("\n  ⚠️  No transactions detected. Check channel mapping and signal levels.")
         
         # Summary
-        print("\n" + "=" * 90)
-        total_bits = 0
-        if "DI" in results:
-            total_bits += len(results["DI"])
-        if "DO" in results:
-            total_bits += len(results["DO"])
-        
-        if total_bits > 0:
-            print(f"✅ Total Bits Decoded: {total_bits}")
+        print("=" * 100)
+        if transactions:
+            print(f"✅ Summary:")
+            print(f"  Total Transactions: {len(transactions)}")
+            if di_enabled:
+                print(f"  DI Total Bits: {total_di_bits} across {len([tx for tx in transactions if tx['di_bits']])} transaction(s)")
+            if do_enabled:
+                print(f"  DO Total Bits: {total_do_bits} across {len([tx for tx in transactions if tx['do_bits']])} transaction(s)")
         else:
             print("⚠️  No bits decoded. Check channel mapping and signal levels.")
-        print("=" * 90 + "\n")
+        print("=" * 100 + "\n")
     
     @staticmethod
     def _bits_to_hex(bit_string: str) -> str:
