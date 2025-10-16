@@ -66,10 +66,10 @@ class IconFactory:
     @staticmethod
     def create_binarize_icon() -> QIcon:
         """Create a binarize icon using Font Awesome"""
-        return qta.icon('fa6s.square', color=COLOR_GOLD)
+        return qta.icon('fa6s.spray-can-sparkles', color=COLOR_GOLD)
     
     @staticmethod
     def create_decode_icon() -> QIcon:
         """Create a decode/mapping icon using Font Awesome"""
-        return qta.icon('fa6s.code', color=COLOR_GOLD)
+        return qta.icon('fa6s.square-binary', color=COLOR_GOLD)
 
