@@ -1060,10 +1060,8 @@ class TimeSeriesGraphWidget(QWidget):
             Binarized time series data with only transitions
         """
         print("\n" + "="*60)
-        print("APPLYING SIGNAL BINARIZATION")
+        print("SIGNAL BINARIZATION")
         print("="*60)
-        print(f"Processing {len(time_series_data.channel_names)} channel(s)...")
-        print(f"Total samples per channel: {len(time_series_data.indices):,}")
         
         binarized_channel_data = {}
         
@@ -1073,10 +1071,7 @@ class TimeSeriesGraphWidget(QWidget):
             
             original_voltage = time_series_data.channel_data[channel_name]
             
-            print(f"\n[{channel_idx}/{len(time_series_data.channel_names)}] Processing {channel_name}...")
-            
             if len(original_voltage) == 0:
-                print(f"  ⚠ Empty channel - skipping")
                 binarized_channel_data[channel_name] = original_voltage
                 continue
             
@@ -1084,9 +1079,6 @@ class TimeSeriesGraphWidget(QWidget):
             v_min = np.min(original_voltage)
             v_max = np.max(original_voltage)
             threshold = (v_min + v_max) / 2
-            
-            print(f"  Voltage range: {v_min:.4f} mV to {v_max:.4f} mV")
-            print(f"  Threshold: {threshold:.4f} mV")
             
             # Create binary signal (0 = low, 1 = high)
             binary_signal = (original_voltage > threshold).astype(int)
@@ -1104,13 +1096,10 @@ class TimeSeriesGraphWidget(QWidget):
                 else:
                     high_to_low += 1
             
-            print(f"  Transitions detected: {len(transition_indices):,}")
-            print(f"    • Low-to-high: {low_to_high:,}")
-            print(f"    • High-to-low: {high_to_low:,}")
+            print(f"  {channel_name}: {len(transition_indices):,} transitions ({low_to_high:,}↑ / {high_to_low:,}↓)")
             
             # If no transitions found, keep original signal
             if len(transition_indices) == 0:
-                print(f"  ⚠ No transitions found - keeping original signal")
                 binarized_channel_data[channel_name] = original_voltage
                 continue
             
@@ -1137,7 +1126,6 @@ class TimeSeriesGraphWidget(QWidget):
             
             # Create the binarized voltage array using vectorized operations (FAST!)
             total_points = len(time_series_data.indices)
-            print(f"  Creating binary square wave from {total_points:,} datapoints...")
             
             # Use NumPy's searchsorted for ultra-fast lookup (O(n log m) instead of O(n*m))
             # This finds which transition segment each point belongs to
@@ -1154,23 +1142,8 @@ class TimeSeriesGraphWidget(QWidget):
             # Now just index into the voltages array - vectorized operation!
             full_binarized = binarized_voltages_array[indices_positions]
             
-            print(f"  ✓ Binary square wave created instantly using vectorized NumPy operations")
-            
             binarized_channel_data[channel_name] = full_binarized
-            
-            # Calculate compression ratio
-            original_unique_points = len(np.unique(original_voltage))
-            binarized_unique_points = len(np.unique(full_binarized))
-            compression_ratio = (1 - binarized_unique_points / original_unique_points) * 100 if original_unique_points > 0 else 0
-            
-            print(f"  Binary signal statistics:")
-            print(f"    • Original unique values: {original_unique_points:,}")
-            print(f"    • Binarized unique values: {binarized_unique_points:,}")
-            print(f"    • Simplification: {compression_ratio:.1f}%")
-            print(f"  ✓ {channel_name} binarization complete")
         
-        print("\n" + "="*60)
-        print("BINARIZATION COMPLETE")
         print("="*60 + "\n")
         
         # Create new TimeSeriesData with binarized signals
