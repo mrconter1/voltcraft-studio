@@ -587,7 +587,7 @@ class MainWindow(QMainWindow):
         Process the decode with the given channel mapping.
         
         Args:
-            mapping: Dictionary mapping channel names to signal types (SK, CS, DI)
+            mapping: Dictionary mapping channel names to signal types (SK, CS, DI, DO)
         """
         if not self.graph_widget.time_series_data:
             QMessageBox.warning(self, "Error", "No time series data available.")
@@ -604,35 +604,54 @@ class MainWindow(QMainWindow):
             )
             return
         
-        # Extract data for SK, CS, DI channels
+        # Extract data for SK and CS channels (required)
         ts_data = self.graph_widget.time_series_data
         channel_data = ts_data.channel_data
         
-        # Find which channels correspond to SK, CS, DI
+        # Find which channels correspond to SK, CS, DI, DO
         reverse_mapping = {v: k for k, v in mapping.items()}  # signal_type -> channel_name
         
         try:
             sk_channel = reverse_mapping.get("SK")
             cs_channel = reverse_mapping.get("CS")
             di_channel = reverse_mapping.get("DI")
+            do_channel = reverse_mapping.get("DO")
             
-            if not all([sk_channel, cs_channel, di_channel]):
-                QMessageBox.warning(self, "Error", "Missing one or more required channels (SK, CS, DI).")
+            # SK and CS are required
+            if not sk_channel or not cs_channel:
+                QMessageBox.warning(
+                    self, 
+                    "Missing Required Channels", 
+                    "Please assign SK and CS to channels.\n\nBoth are required for decoding."
+                )
                 return
             
+            # Get data for required channels
             sk_data = channel_data[sk_channel]
             cs_data = channel_data[cs_channel]
-            di_data = channel_data[di_channel]
             
-            # Process decode
-            events = DecodeProcessor.process_decode(
-                sk_data, cs_data, di_data,
+            # Get optional DI and DO data
+            di_data = channel_data[di_channel] if di_channel else None
+            do_data = channel_data[do_channel] if do_channel else None
+            
+            # Check that at least one of DI or DO is mapped
+            if di_data is None and do_data is None:
+                QMessageBox.warning(
+                    self, 
+                    "No Data Channels", 
+                    "Please assign at least one of DI (Data Input) or DO (Data Output) to decode."
+                )
+                return
+            
+            # Process binary decode
+            results = DecodeProcessor.process_decode_binary(
+                sk_data, cs_data, di_data, do_data,
                 time_interval_str,
                 len(sk_data)
             )
             
             # Print results
-            DecodeProcessor.print_decode_results(events, mapping, time_interval_str)
+            DecodeProcessor.print_decode_results_binary(results, mapping, time_interval_str)
             
         except KeyError as e:
             QMessageBox.critical(self, "Error", f"Channel data not found: {e}")

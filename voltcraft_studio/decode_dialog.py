@@ -110,7 +110,7 @@ class DecodeDialog(QDialog):
         main_layout.addWidget(title_label)
         
         # Info label
-        info_label = QLabel("Select the signal type for each channel (SK, CS, DI):\nPattern: SK HIGH + CS HIGH + DI ↑ (rising edge)")
+        info_label = QLabel("Select the signal type for each channel:\nDecoding: On each SK rising edge while CS HIGH, sample DI/DO bits")
         info_label.setStyleSheet("color: #b0b0b0; font-size: 10pt; margin-bottom: 8px;")
         main_layout.addWidget(info_label)
         
