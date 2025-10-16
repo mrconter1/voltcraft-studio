@@ -1,14 +1,14 @@
 """Main window for Voltcraft Studio"""
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
-    QTabWidget, QMessageBox, QLabel, QApplication, QDialog, QTextEdit
+    QTabWidget, QMessageBox, QLabel, QApplication, QDialog, QTextEdit, QScrollArea
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 
-from .models import ChannelInfo, TimeSeriesData
+from .models import ChannelInfo, TimeSeriesData, DeviceInfo
 from .icons import IconFactory
 from .graph_widget import TimeSeriesGraphWidget
 from .loader import FileLoaderThread
@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         self.copy_status_label.hide()
         channel_info_layout.addWidget(self.copy_status_label)
         
-        self.tab_widget.addTab(channel_info_widget, "📊 Channel Info")
+        self.tab_widget.addTab(channel_info_widget, "📊 Data Info")
         
         # Connect to tab change event to clear selection
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -179,6 +179,7 @@ class MainWindow(QMainWindow):
         # Initialize loader thread
         self.loader_thread = None
         self.current_file_path = None
+        self.device_info = None  # Store device info from bin files
         
         # Tool state
         self.current_tool = "move"  # Default tool is move
@@ -285,12 +286,92 @@ class MainWindow(QMainWindow):
     
     def _on_tab_changed(self, index):
         """Handle tab change event"""
-        # Check if we switched to the Channel Info tab (index 1)
-        if index == 1:  # Channel Info tab
+        # Check if we switched to the Data Info tab (index 1)
+        if index == 1:  # Data Info tab
             # Clear selection when entering the tab
             self.channel_table.clearSelection()
             # Also hide any copy status message
             self.copy_status_label.hide()
+    
+    def _format_metadata_value(self, value) -> str:
+        """Format a metadata value for display"""
+        if value is None:
+            return "N/A"
+        return str(value)
+    
+    def display_bin_metadata(self, device_info: Optional[DeviceInfo], channels: List[ChannelInfo]):
+        """Display bin file metadata in a hierarchical table format"""
+        if not channels or not any(ch.raw_metadata for ch in channels):
+            return
+        
+        # Build a list of all keys that appear in any channel
+        all_keys = set()
+        for channel in channels:
+            if channel.raw_metadata:
+                all_keys.update(channel.raw_metadata.keys())
+        
+        # Sort keys for consistent display
+        sorted_keys = sorted(all_keys)
+        
+        # Calculate table dimensions
+        # Rows: device info (2) + separator + channels * keys
+        num_device_rows = 0
+        if device_info and (device_info.model or device_info.idn):
+            num_device_rows = 2
+        
+        num_data_rows = num_device_rows + len(sorted_keys)
+        num_cols = len(channels)
+        
+        # Set table dimensions
+        self.channel_table.setRowCount(num_data_rows)
+        self.channel_table.setColumnCount(num_cols)
+        
+        # Set column headers (channel names)
+        self.channel_table.setHorizontalHeaderLabels([ch.name for ch in channels])
+        
+        # Set row headers
+        row_labels = []
+        if device_info and (device_info.model or device_info.idn):
+            row_labels.append("MODEL")
+            row_labels.append("IDN")
+        row_labels.extend(sorted_keys)
+        self.channel_table.setVerticalHeaderLabels(row_labels)
+        
+        # Fill device info rows
+        current_row = 0
+        if device_info and (device_info.model or device_info.idn):
+            # MODEL row
+            for col in range(num_cols):
+                item = QTableWidgetItem(self._format_metadata_value(device_info.model))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                self.channel_table.setItem(current_row, col, item)
+            current_row += 1
+            
+            # IDN row
+            for col in range(num_cols):
+                item = QTableWidgetItem(self._format_metadata_value(device_info.idn))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                self.channel_table.setItem(current_row, col, item)
+            current_row += 1
+        
+        # Fill channel metadata rows
+        for key in sorted_keys:
+            for col, channel in enumerate(channels):
+                value = ""
+                if channel.raw_metadata and key in channel.raw_metadata:
+                    value = self._format_metadata_value(channel.raw_metadata[key])
+                
+                item = QTableWidgetItem(value)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                self.channel_table.setItem(current_row, col, item)
+            current_row += 1
+        
+        # Resize to fit content
+        self.channel_table.resizeColumnsToContents()
+        self.channel_table.resizeRowsToContents()
     
     def _copy_table_selection(self):
         """Copy selected cells from channel table to clipboard, including headers if selected"""
@@ -406,7 +487,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(2000, self.copy_status_label.hide)
     
     def display_channel_info(self, channels: List[ChannelInfo]):
-        """Display channel information in table"""
+        """Display channel information in table (txt format with predefined parameters)"""
         if not channels:
             return
         
@@ -509,7 +590,7 @@ class MainWindow(QMainWindow):
         <b>1</b> - Switch to Move tool<br>
         <b>2</b> - Switch to Tape Measure tool<br>
         <b>3</b> - Toggle signal binarization<br>
-        <b>Ctrl + C</b> - Copy selected cells (Channel Info tab)<br>
+        <b>Ctrl + C</b> - Copy selected cells (Data Info tab)<br>
         <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
         <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
         </p>
@@ -547,14 +628,24 @@ class MainWindow(QMainWindow):
         """Update progress display"""
         self.graph_widget.set_loading_progress(value, message)
     
-    def _on_metadata_loaded(self, channels: List[ChannelInfo]):
+    def _on_metadata_loaded(self, device_info: Optional[DeviceInfo], channels: List[ChannelInfo]):
         """Handle metadata loaded (before full data)"""
+        # Store device info
+        self.device_info = device_info
+        
         # Display channel info in table immediately
-        self.display_channel_info(channels)
+        # Use appropriate display method based on whether we have bin metadata
+        if device_info or (channels and channels[0].raw_metadata):
+            # Bin file format with rich metadata
+            self.display_bin_metadata(device_info, channels)
+        else:
+            # Text file format with predefined parameters
+            self.display_channel_info(channels)
+        
         # Update window title
         self.setWindowTitle(f"{WINDOW_TITLE} - {self.current_file_path}")
     
-    def _on_file_loaded(self, channels: List[ChannelInfo], time_series: TimeSeriesData):
+    def _on_file_loaded(self, device_info: Optional[DeviceInfo], channels: List[ChannelInfo], time_series: TimeSeriesData):
         """Handle successful file load (full data ready)"""
         # Channel info already displayed from metadata_loaded signal
         # Now just plot the time series data

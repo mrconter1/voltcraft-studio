@@ -5,7 +5,7 @@ import struct
 import json
 import os
 import re
-from .models import ChannelInfo, TimeSeriesData
+from .models import ChannelInfo, TimeSeriesData, DeviceInfo
 from .constants import (
     PARSER_BATCH_SIZE,
     PARSER_PROGRESS_METADATA_START,
@@ -40,7 +40,7 @@ class ChannelDataParser:
             return False
     
     @staticmethod
-    def parse_binary_metadata_only(file_path: str) -> List[ChannelInfo]:
+    def parse_binary_metadata_only(file_path: str) -> Tuple[DeviceInfo, List[ChannelInfo]]:
         """
         Parse only the channel metadata from OWON binary file (fast)
         
@@ -48,7 +48,7 @@ class ChannelDataParser:
             file_path: Path to the binary file to parse
             
         Returns:
-            List of ChannelInfo objects
+            Tuple of (DeviceInfo, List of ChannelInfo objects)
         """
         with open(file_path, 'rb') as f:
             # Read and validate magic header
@@ -83,26 +83,22 @@ class ChannelDataParser:
             else:
                 raise ValueError("Could not parse JSON metadata from binary file")
         
+        # Extract device info
+        device_info = DeviceInfo(
+            model=json_data.get('MODEL'),
+            idn=json_data.get('IDN')
+        )
+        
         # Create ChannelInfo objects from JSON channel data
         channels = []
         for channel_info in json_data.get('channel', []):
-            channel = ChannelInfo(
-                name=channel_info.get('Index', '?'),
-                frequency=channel_info.get('Freq', '?'),
-                period=channel_info.get('Cyc', '?'),
-                pk_pk='?',
-                average='?',
-                vertical_pos=channel_info.get('Reference_Zero', '?'),
-                probe_attenuation=channel_info.get('Probe_Magnification', '?'),
-                voltage_per_adc=channel_info.get('Voltage_Rate', '?'),
-                time_interval=channel_info.get('Adc_Data_Time', '?')
-            )
+            channel = ChannelInfo.create_from_bin_data(channel_info)
             channels.append(channel)
         
-        return channels
+        return device_info, channels
     
     @staticmethod
-    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[List[ChannelInfo], TimeSeriesData]:
+    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from OWON binary file with streaming and progress updates
         
@@ -111,7 +107,7 @@ class ChannelDataParser:
             progress_callback: Optional callback function(percent, message) for progress updates
             
         Returns:
-            Tuple of (List of ChannelInfo objects, TimeSeriesData object)
+            Tuple of (DeviceInfo, List of ChannelInfo objects, TimeSeriesData object)
         """
         file_size = os.path.getsize(file_path)
         
@@ -154,6 +150,12 @@ class ChannelDataParser:
                 else:
                     raise ValueError("Could not parse JSON metadata from binary file")
             
+            # Extract device info
+            device_info = DeviceInfo(
+                model=json_data.get('MODEL'),
+                idn=json_data.get('IDN')
+            )
+            
             # Extract channel information
             channel_configs = json_data.get('channel', [])
             channel_names = [ch.get('Index', f'CH{i}') for i, ch in enumerate(channel_configs)]
@@ -161,17 +163,7 @@ class ChannelDataParser:
             # Create ChannelInfo objects
             channels = []
             for channel_info in channel_configs:
-                channel = ChannelInfo(
-                    name=channel_info.get('Index', '?'),
-                    frequency=channel_info.get('Freq', '?'),
-                    period=channel_info.get('Cyc', '?'),
-                    pk_pk='?',
-                    average='?',
-                    vertical_pos=channel_info.get('Reference_Zero', '?'),
-                    probe_attenuation=channel_info.get('Probe_Magnification', '?'),
-                    voltage_per_adc=channel_info.get('Voltage_Rate', '?'),
-                    time_interval=channel_info.get('Adc_Data_Time', '?')
-                )
+                channel = ChannelInfo.create_from_bin_data(channel_info)
                 channels.append(channel)
             
             # Parse binary channel data
@@ -258,10 +250,10 @@ class ChannelDataParser:
             channel_names=channel_names
         )
         
-        return channels, time_series
+        return device_info, channels, time_series
     
     @staticmethod
-    def parse_metadata_only(file_path: str) -> List[ChannelInfo]:
+    def parse_metadata_only(file_path: str) -> Tuple[Optional[DeviceInfo], List[ChannelInfo]]:
         """
         Parse only the channel metadata from file (fast)
         
@@ -269,7 +261,7 @@ class ChannelDataParser:
             file_path: Path to the file to parse
             
         Returns:
-            List of ChannelInfo objects
+            Tuple of (DeviceInfo or None for txt files, List of ChannelInfo objects)
         """
         # Read metadata (first ~20-30 lines until 'index')
         metadata_lines = []
@@ -319,10 +311,10 @@ class ChannelDataParser:
             )
             channels.append(channel)
         
-        return channels
+        return None, channels
     
     @staticmethod
-    def parse_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[List[ChannelInfo], TimeSeriesData]:
+    def parse_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[Optional[DeviceInfo], List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from file with streaming and progress updates
         
@@ -331,7 +323,7 @@ class ChannelDataParser:
             progress_callback: Optional callback function(percent, message) for progress updates
             
         Returns:
-            Tuple of (List of ChannelInfo objects, TimeSeriesData object)
+            Tuple of (DeviceInfo or None for txt files, List of ChannelInfo objects, TimeSeriesData object)
         """
         import os
         
@@ -492,5 +484,5 @@ class ChannelDataParser:
         if parse_errors > 0:
             print(f"Warning: {parse_errors} lines had parse errors during data import")
         
-        return channels, time_series
+        return None, channels, time_series
 
