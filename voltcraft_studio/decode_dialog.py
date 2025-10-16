@@ -9,14 +9,22 @@ from typing import Dict, Optional
 
 
 class DecodeDialog(QDialog):
-    """Dialog for mapping channels to signal types (SK, CS, DI, DO)"""
+    """Dialog for mapping channels to signal types (SK, CS, DI)"""
     
     SIGNAL_TYPES = ["None", "SK", "CS", "DI", "DO"]
+    
+    # Default mapping based on channel names
+    DEFAULT_MAPPING = {
+        "CH1": "SK",
+        "CH2": "DI",
+        "CH3": "DO",
+        "CH4": "CS"
+    }
     
     def __init__(self, channels: list, parent=None, icon: Optional[QIcon] = None):
         super().__init__(parent)
         self.channels = channels
-        self.mapping: Dict[str, str] = {}
+        self.mapping: Dict[str, str] = {}  # Maps channel name to signal type
         
         self.setWindowTitle("Channel Decoder - Signal Type Mapping")
         if icon:
@@ -102,7 +110,7 @@ class DecodeDialog(QDialog):
         main_layout.addWidget(title_label)
         
         # Info label
-        info_label = QLabel("Select the signal type for each channel:")
+        info_label = QLabel("Select the signal type for each channel (SK, CS, DI):\nPattern: SK HIGH + CS HIGH + DI ↑ (rising edge)")
         info_label.setStyleSheet("color: #b0b0b0; font-size: 10pt; margin-bottom: 8px;")
         main_layout.addWidget(info_label)
         
@@ -147,7 +155,12 @@ class DecodeDialog(QDialog):
             # Dropdown for signal type
             combo = QComboBox()
             combo.addItems(self.SIGNAL_TYPES)
-            combo.setCurrentIndex(0)  # Default to "None"
+            
+            # Set default based on channel name
+            default_value = self.DEFAULT_MAPPING.get(channel, "None")
+            default_index = self.SIGNAL_TYPES.index(default_value) if default_value in self.SIGNAL_TYPES else 0
+            combo.setCurrentIndex(default_index)
+            
             self.combo_boxes[channel] = combo
             grid_layout.addWidget(combo, idx, 1)
         
@@ -167,7 +180,7 @@ class DecodeDialog(QDialog):
         button_layout.addWidget(cancel_button)
         
         # Decode button
-        decode_button = QPushButton("Decode")
+        decode_button = QPushButton("Decode & Analyze")
         decode_button.setObjectName("decodeButton")
         decode_button.clicked.connect(self._on_decode)
         button_layout.addWidget(decode_button)
@@ -183,36 +196,23 @@ class DecodeDialog(QDialog):
             if signal_type != "None":
                 self.mapping[channel] = signal_type
         
-        # Print to terminal
-        self._print_mapping_to_terminal()
+        # Validate that we have SK, CS, and DI
+        required_types = {"SK", "CS", "DI"}
+        mapped_types = set(self.mapping.values())
         
-        # Close dialog
+        if not required_types.issubset(mapped_types):
+            missing = required_types - mapped_types
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Incomplete Mapping",
+                f"Please map all required signal types: {', '.join(missing)}",
+                QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        # Close dialog with acceptance
         self.accept()
-    
-    def _print_mapping_to_terminal(self):
-        """Print the channel mapping to terminal/console"""
-        print("\n" + "="*60)
-        print("CHANNEL DECODER - SIGNAL TYPE MAPPING")
-        print("="*60)
-        
-        if not self.mapping:
-            print("No channels mapped. All channels set to 'None'.")
-        else:
-            for channel, signal_type in sorted(self.mapping.items()):
-                print(f"  {channel:<15} → {signal_type}")
-        
-        # Print summary
-        signal_counts = {}
-        for signal_type in self.mapping.values():
-            signal_counts[signal_type] = signal_counts.get(signal_type, 0) + 1
-        
-        if signal_counts:
-            print("\nSignal Type Summary:")
-            for signal_type in sorted(signal_counts.keys()):
-                count = signal_counts[signal_type]
-                print(f"  {signal_type}: {count} channel(s)")
-        
-        print("="*60 + "\n")
     
     def get_mapping(self) -> Dict[str, str]:
         """Get the channel mapping"""

@@ -1,5 +1,5 @@
 """Main window for Voltcraft Studio"""
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QToolBar,
@@ -12,13 +12,14 @@ from .models import ChannelInfo, TimeSeriesData, DeviceInfo
 from .icons import IconFactory
 from .graph_widget import TimeSeriesGraphWidget
 from .loader import FileLoaderThread
+from .decode_dialog import DecodeDialog
+from .decode_processor import DecodeProcessor
 from .constants import (
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
     FILE_DIALOG_TITLE, FILE_DIALOG_FILTER,
     HELP_DIALOG_TEXT
 )
-from .decode_dialog import DecodeDialog
 
 
 class MainWindow(QMainWindow):
@@ -557,7 +558,7 @@ class MainWindow(QMainWindow):
         self.graph_widget.set_binarize(is_binarized)
     
     def show_decode_dialog(self):
-        """Show the decode signal dialog"""
+        """Show the decode signal dialog and process the decode"""
         if self.current_channels is None or len(self.current_channels) == 0:
             QMessageBox.warning(
                 self,
@@ -572,7 +573,93 @@ class MainWindow(QMainWindow):
         
         # Create and show decode dialog with app icon
         self.decode_dialog = DecodeDialog(channel_names, self, IconFactory.create_window_icon())
-        self.decode_dialog.exec()
+        
+        # Show dialog and wait for result
+        if self.decode_dialog.exec():
+            # User clicked "Decode & Analyze"
+            mapping = self.decode_dialog.get_mapping()
+            
+            # Process decode with actual data
+            self._process_decode(mapping)
+    
+    def _process_decode(self, mapping: Dict[str, str]):
+        """
+        Process the decode with the given channel mapping.
+        
+        Args:
+            mapping: Dictionary mapping channel names to signal types (SK, CS, DI)
+        """
+        if not self.graph_widget.time_series_data:
+            QMessageBox.warning(self, "Error", "No time series data available.")
+            return
+        
+        # Get time interval from channel metadata
+        time_interval_str = self._get_time_interval()
+        if not time_interval_str:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Could not determine time interval from file metadata.",
+                QMessageBox.StandardButton.Ok
+            )
+            return
+        
+        # Extract data for SK, CS, DI channels
+        ts_data = self.graph_widget.time_series_data
+        channel_data = ts_data.channel_data
+        
+        # Find which channels correspond to SK, CS, DI
+        reverse_mapping = {v: k for k, v in mapping.items()}  # signal_type -> channel_name
+        
+        try:
+            sk_channel = reverse_mapping.get("SK")
+            cs_channel = reverse_mapping.get("CS")
+            di_channel = reverse_mapping.get("DI")
+            
+            if not all([sk_channel, cs_channel, di_channel]):
+                QMessageBox.warning(self, "Error", "Missing one or more required channels (SK, CS, DI).")
+                return
+            
+            sk_data = channel_data[sk_channel]
+            cs_data = channel_data[cs_channel]
+            di_data = channel_data[di_channel]
+            
+            # Process decode
+            events = DecodeProcessor.process_decode(
+                sk_data, cs_data, di_data,
+                time_interval_str,
+                len(sk_data)
+            )
+            
+            # Print results
+            DecodeProcessor.print_decode_results(events, mapping, time_interval_str)
+            
+        except KeyError as e:
+            QMessageBox.critical(self, "Error", f"Channel data not found: {e}")
+    
+    def _get_time_interval(self) -> str:
+        """
+        Get time interval from channel metadata.
+        Looks for 'Adc_Data_Time' in raw metadata or similar fields.
+        
+        Returns:
+            Time interval string (e.g., "0.400000us") or None if not found
+        """
+        if not self.current_channels or len(self.current_channels) == 0:
+            return None
+        
+        # Try to get from first channel's raw metadata
+        for channel in self.current_channels:
+            if channel.raw_metadata:
+                # Look for Adc_Data_Time field
+                if "Adc_Data_Time" in channel.raw_metadata:
+                    return str(channel.raw_metadata["Adc_Data_Time"])
+            
+            # Fallback: try time_interval attribute if it exists
+            if hasattr(channel, "time_interval") and channel.time_interval:
+                return channel.time_interval
+        
+        return None
     
     def show_help(self):
         """Show help dialog with controls and keyboard shortcuts"""
