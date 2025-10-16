@@ -14,6 +14,7 @@ from .graph_widget import TimeSeriesGraphWidget
 from .loader import FileLoaderThread
 from .decode_dialog import DecodeDialog
 from .decode_processor import DecodeProcessor
+from .decode_results_dialog import DecodeResultsDialog
 from .constants import (
     WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT,
     TOOLBAR_ICON_SIZE, CHANNEL_PARAMETERS,
@@ -650,8 +651,10 @@ class MainWindow(QMainWindow):
                 len(sk_data)
             )
             
-            # Print results
-            DecodeProcessor.print_decode_results_binary(results, mapping, time_interval_str)
+            # Show results in a dialog
+            self.decode_results_dialog = DecodeResultsDialog(results, mapping, time_interval_str, 
+                                                              self, IconFactory.create_window_icon())
+            self.decode_results_dialog.exec()
             
         except KeyError as e:
             QMessageBox.critical(self, "Error", f"Channel data not found: {e}")
