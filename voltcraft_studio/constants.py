@@ -1,10 +1,12 @@
 """Constants for Voltcraft Studio"""
 from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QColor
+from .utils import get_version
 
 
 # Window settings
-WINDOW_TITLE = "Voltcraft Studio"
+APP_VERSION = get_version()
+WINDOW_TITLE = f"Voltcraft Studio v{APP_VERSION}"
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
 

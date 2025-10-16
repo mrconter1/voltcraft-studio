@@ -1,9 +1,28 @@
 """Utility functions for Voltcraft Studio"""
 import re
+from pathlib import Path
 from pint import UnitRegistry
 
 # Initialize Pint unit registry
 ureg = UnitRegistry()
+
+
+def get_version() -> str:
+    """
+    Get the application version from version.txt.
+    
+    Returns:
+        str: Version string (e.g., "1.3.0") or "unknown" if not found
+    """
+    try:
+        # Look for version.txt in the project root (parent of voltcraft_studio package)
+        version_file = Path(__file__).parent.parent / "version.txt"
+        if version_file.exists():
+            return version_file.read_text().strip()
+    except Exception:
+        pass
+    
+    return "unknown"
 
 
 def parse_time_interval(time_interval_str: str) -> tuple:
