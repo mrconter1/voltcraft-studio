@@ -164,6 +164,8 @@ class ChannelDataParser:
             print(f"  Formulas:")
             print(f"    offset = (reference_zero / 2) % 256")
             print(f"    scale = voltage_rate × 256")
+            print(f"  Wave Length Data (4 bytes): little-endian uint32")
+            print(f"  Wave Samples (2 bytes each): big-endian uint16")
             print()
             
             # Track wave data offset for reading channel-specific wave data
