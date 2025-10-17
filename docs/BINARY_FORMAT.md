@@ -182,13 +182,3 @@ scale = 0.312500 × 256
 voltage_1 = (118 - 57.5) × 80.0 = 60.5 × 80.0 = 4840.0 mV
 voltage_2 = (119 - 57.5) × 80.0 = 61.5 × 80.0 = 4920.0 mV
 ```
-
----
-
-## Byte Order Reference
-
-| Data Type | Byte Order | Example |
-|-----------|-----------|---------|
-| Magic Header | ASCII | 0x53 0x50 0x42 0x58 0x44 0x53 |
-| Length Fields | Little-Endian (LE) | 0xF7 0x09 0x00 0x00 = 0x000009F7 |
-| Samples | Big-Endian (BE) | 0x00 0xA5 = 0x00A5 |
