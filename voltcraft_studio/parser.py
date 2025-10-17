@@ -125,14 +125,16 @@ class ChannelDataParser:
                 print("⚠️  Less than 20 bytes available after JSON")
                 return
             
-            # Display in simple hex format
+            # Calculate the file offset where wave header starts
+            wave_header_offset = 10 + json_length
+            
+            # Display two bytes per line with offsets
             print("\n Byte Values (Hex):")
-            hex_line = "  "
-            for i, byte in enumerate(wave_header):
-                hex_line += f"{byte:02X} "
-                if (i + 1) % 8 == 0:
-                    hex_line += " "
-            print(hex_line + "\n")
+            for i in range(0, 20, 2):
+                byte1 = wave_header[i]
+                byte2 = wave_header[i + 1] if i + 1 < 20 else 0
+                offset = wave_header_offset + i
+                print(f"  Offset 0x{offset:04X}: {byte1:02X} {byte2:02X}")
     
     @staticmethod
     def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
