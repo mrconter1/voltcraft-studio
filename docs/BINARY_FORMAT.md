@@ -27,41 +27,34 @@ SPBXDS Binary File Format
 └─ Channel Data (starts after JSON, varies in size)
    ├─ Channel 1
    │  ├─ Data Length: uint32 LE (4 bytes)
-   │  └─ Samples: uint16 BE (N × 2 bytes)
+   │  └─ Samples: uint16 BE (S × 2 bytes)
    ├─ Channel 2
    │  ├─ Data Length: uint32 LE (4 bytes)
-   │  └─ Samples: uint16 BE (N × 2 bytes)
-   ├─ Channel 3
-   │  ├─ Data Length: uint32 LE (4 bytes)
-   │  └─ Samples: uint16 BE (N × 2 bytes)
-   └─ Channel 4
+   │  └─ Samples: uint16 BE (S × 2 bytes)
+   └─ Channel N
       ├─ Data Length: uint32 LE (4 bytes)
-      └─ Samples: uint16 BE (N × 2 bytes)
+      └─ Samples: uint16 BE (S × 2 bytes)
 ```
+
+**Note:** The number of channels (N) varies by device. The DSO6084F supports 4 channels. Each channel contains S (number of samples) 2-byte waveform samples.
 
 ---
 
-## File Structure
+## File Structure Details
 
-### 1. Header Section (10 bytes)
+### Header Section
+**Offset:** 0x0000 | **Size:** 10 bytes
 
-| Offset | Size | Field | Format | Description |
-|--------|------|-------|--------|-------------|
-| 0x0000 | 6    | Magic | ASCII | Fixed string: `SPBXDS` (0x53 0x50 0x42 0x58 0x44 0x53) |
-| 0x0006 | 4    | JSON Length | uint32 LE | Length of JSON metadata in bytes |
-
-**Example:**
+Contains the magic header and JSON length:
 ```
 0x0000: 53 50 42 58 44 53           → "SPBXDS"
 0x0006: F7 09 00 00                 → 2551 bytes (0x09F7 in little-endian)
 ```
 
-### 2. JSON Metadata Section
+### JSON Metadata Section
+**Offset:** 0x000A | **Size:** Variable (specified in header)
 
-**Offset:** 0x000A  
-**Size:** Variable (specified in header)
-
-Contains device information and channel configuration in JSON format:
+Device information and channel configuration:
 
 ```json
 {
@@ -70,36 +63,15 @@ Contains device information and channel configuration in JSON format:
   "channel": [
     {
       "Index": "CH1",
-      "Availability_Flag": "TRUE",
-      "Display_Switch": "OFF",
       "Reference_Zero": -181,
-      "Voltage_Rate": 0.781250,
-      "Wave_Character": "CH1"
+      "Voltage_Rate": 0.781250
     },
     {
       "Index": "CH2",
-      "Availability_Flag": "TRUE",
-      "Display_Switch": "ON",
       "Reference_Zero": 49,
-      "Voltage_Rate": 0.781250,
-      "Wave_Character": "CH2"
+      "Voltage_Rate": 0.781250
     },
-    {
-      "Index": "CH3",
-      "Availability_Flag": "TRUE",
-      "Display_Switch": "ON",
-      "Reference_Zero": 115,
-      "Voltage_Rate": 0.312500,
-      "Wave_Character": "CH3"
-    },
-    {
-      "Index": "CH4",
-      "Availability_Flag": "TRUE",
-      "Display_Switch": "OFF",
-      "Reference_Zero": -53,
-      "Voltage_Rate": 0.781250,
-      "Wave_Character": "CH4"
-    }
+    ...
   ]
 }
 ```
@@ -108,59 +80,26 @@ Contains device information and channel configuration in JSON format:
 - `Reference_Zero`: Integer offset value used in voltage calculations
 - `Voltage_Rate`: Voltage scale in millivolts per unit
 
-### 3. Channel Data Section
+### Channel Data Section
+**Offset:** 0x000A + JSON_LENGTH | **Size:** Varies
 
-**Offset:** Immediately after JSON (0x000A + JSON_LENGTH)
+Sequential channel blocks, each with:
+- **Data Length** (4 bytes, uint32 LE) - number of bytes in waveform
+- **Samples** (S × 2 bytes, uint16 BE) - raw waveform data
 
-Each channel contains sequential wave data. For a 4-channel device, the layout is:
-
+**Example layout for 4 channels with 20MB each:**
 ```
-[CH1 Data] [CH2 Data] [CH3 Data] [CH4 Data]
-```
-
----
-
-## Channel Data Format
-
-### Channel Structure
-
-| Offset | Size | Field | Format | Description |
-|--------|------|-------|--------|-------------|
-| +0     | 4    | Length | uint32 LE | Number of bytes in waveform data |
-| +4     | N    | Data  | uint16 BE | Waveform samples (2 bytes each) |
-
-**Note:** Channel offsets are calculated cumulatively; each channel's data begins after the previous one.
-
-### Example Channel Layout
-
-For 4 channels with 20,000,000 bytes each (0x01312D00 LE):
-
-```
-CH1: offset 0x0A0A (10250 decimal)
-     Length: 0x01312D00 → 20,000,000 bytes
-     Data:   20,000,000 samples
-     End:    offset 0x1313709
-
-CH2: offset 0x1313709 (20,002,569 decimal)
-     Length: 0x01312D00 → 20,000,000 bytes
-     Data:   20,000,000 samples
-     End:    offset 0x2626407
-
-CH3: offset 0x2626407 (40,002,567 decimal)
-     Length: 0x01312D00 → 20,000,000 bytes
-     Data:   20,000,000 samples
-     End:    offset 0x393910B
-
-CH4: offset 0x393910B (60,002,571 decimal)
-     Length: 0x01312D00 → 20,000,000 bytes
-     Data:   20,000,000 samples
+CH1: 0x0A0A → 20,000,000 bytes
+CH2: 0x1313709 → 20,000,000 bytes
+...
+CHN: offset calculated cumulatively
 ```
 
 ---
 
 ## Voltage Conversion Formula
 
-Raw ADC values must be converted to voltage using the formula:
+Raw ADC values must be converted to voltage using:
 
 ```
 voltage_mV = (raw_sample - offset) × scale
@@ -170,25 +109,11 @@ where:
   scale  = Voltage_Rate × 256
 ```
 
-### Detailed Calculation Steps
+**Calculation steps:**
 
-1. **Calculate Offset:**
-   ```
-   offset = (Reference_Zero / 2) % 256
-   ```
-   Uses modulo arithmetic to ensure offset is in range [0, 256)
-
-2. **Calculate Scale:**
-   ```
-   scale = Voltage_Rate × 256
-   ```
-   Converts voltage rate to per-unit scaling factor
-
-3. **Convert Sample:**
-   ```
-   voltage_mV = (raw_sample - offset) × scale
-   ```
-   Applies linear transformation to raw ADC value
+1. **offset** = (Reference_Zero / 2) % 256
+2. **scale** = Voltage_Rate × 256
+3. **voltage_mV** = (raw_sample - offset) × scale
 
 ---
 
@@ -225,12 +150,12 @@ scale = 0.781250 × 256
 voltage = (165 - 165.5) × 200.0 = -0.5 × 200.0 = -100.0 mV
 ```
 
-### Channel 3 (CH3)
+### Channel 2 (CH2)
 
 **JSON Configuration:**
 ```json
 {
-  "Index": "CH3",
+  "Index": "CH2",
   "Reference_Zero": 115,
   "Voltage_Rate": 0.312500
 }
@@ -246,10 +171,10 @@ scale = 0.312500 × 256
       = 80.0
 ```
 
-**Raw Data at offset 0x262640D (binary):**
+**Raw Data at offset 0x2626409 (binary):**
 ```
-0x262640D: 00 76  →  raw_sample = 0x0076 = 118
-0x262640F: 00 77  →  raw_sample = 0x0077 = 119
+0x2626409: 00 76  →  raw_sample = 0x0076 = 118
+0x262640B: 00 77  →  raw_sample = 0x0077 = 119
 ```
 
 **Voltage Conversion:**
