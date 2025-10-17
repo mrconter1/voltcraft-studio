@@ -9,6 +9,38 @@ The Voltcraft DSO6084F oscilloscope uses a proprietary binary format to store wa
 
 ---
 
+## Binary Structure Overview
+
+```
+SPBXDS Binary File Format
+│
+├─ Header (10 bytes total)
+│  ├─ Magic Header: "SPBXDS" (6 bytes at offset 0x0000)
+│  └─ JSON Length: uint32 LE (4 bytes at offset 0x0006)
+│
+├─ JSON Metadata (varies in size, starts at 0x000A)
+│  └─ Single JSON object
+│     ├─ MODEL
+│     ├─ IDN
+│     └─ channel[] (array of channel configurations)
+│
+└─ Channel Data (starts after JSON, varies in size)
+   ├─ Channel 1
+   │  ├─ Data Length: uint32 LE (4 bytes)
+   │  └─ Samples: uint16 BE (N × 2 bytes)
+   ├─ Channel 2
+   │  ├─ Data Length: uint32 LE (4 bytes)
+   │  └─ Samples: uint16 BE (N × 2 bytes)
+   ├─ Channel 3
+   │  ├─ Data Length: uint32 LE (4 bytes)
+   │  └─ Samples: uint16 BE (N × 2 bytes)
+   └─ Channel 4
+      ├─ Data Length: uint32 LE (4 bytes)
+      └─ Samples: uint16 BE (N × 2 bytes)
+```
+
+---
+
 ## File Structure
 
 ### 1. Header Section (10 bytes)
@@ -249,17 +281,3 @@ voltage_5 = (118 - 57.5) × 80.0 = 60.5 × 80.0 = 4840.0 mV
 | Magic Header | ASCII | 0x53 0x50 0x42 0x58 0x44 0x53 |
 | Length Fields | Little-Endian (LE) | 0xF7 0x09 0x00 0x00 = 0x000009F7 |
 | Samples | Big-Endian (BE) | 0x00 0xA5 = 0x00A5 |
-
----
-
-## Implementation Checklist
-
-- [ ] Read and validate magic header (SPBXDS)
-- [ ] Parse JSON length as uint32 LE
-- [ ] Extract and parse JSON metadata
-- [ ] Calculate offset and scale for each channel
-- [ ] For each channel:
-  - [ ] Read data length (uint32 LE)
-  - [ ] Iterate through samples (uint16 BE)
-  - [ ] Apply voltage conversion formula
-  - [ ] Store or display results
