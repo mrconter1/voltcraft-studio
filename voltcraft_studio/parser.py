@@ -352,12 +352,23 @@ class ChannelDataParser:
                 # Extract voltage conversion parameters
                 voltage_rate_str = channel_config.get('Voltage_Rate', '0.781250mv')
                 probe_mag_str = channel_config.get('Probe_Magnification', '1X')
+                reference_zero = channel_config.get('Reference_Zero', 0)
                 
-                # Parse voltage rate (e.g., "0.781250mv" -> 0.000781250)
-                voltage_rate = float(voltage_rate_str.replace('mv', '').replace('mV', '')) / 1000.0
+                # Parse voltage rate (e.g., "0.781250mv" -> 0.781250)
+                voltage_rate = float(voltage_rate_str.replace('mv', '').replace('mV', ''))
                 
                 # Parse probe magnification (e.g., "10X" -> 10)
                 probe_mag = float(probe_mag_str.replace('X', '').replace('x', ''))
+                
+                # Calculate offset and scale using the same formula as print_wave_header_info
+                try:
+                    ref_zero_int = int(reference_zero)
+                    offset_val = (ref_zero_int / 2) % 256
+                    scale_val = voltage_rate * 256
+                except (ValueError, TypeError):
+                    # Fallback to basic calculation if parsing fails
+                    offset_val = 128
+                    scale_val = voltage_rate * 256
                 
                 # Read and convert samples
                 channel_name = channel_config.get('Index', f'CH{ch_idx}')
@@ -369,11 +380,15 @@ class ChannelDataParser:
                     if len(sample_bytes) < 2:
                         break
                     
-                    # Unpack as 16-bit signed integer (little-endian)
-                    raw_sample = struct.unpack('<h', sample_bytes)[0]
+                    # Unpack as 16-bit unsigned integer (big-endian) - matches binary format
+                    byte1 = sample_bytes[0]
+                    byte2 = sample_bytes[1]
+                    raw_value = (byte1 << 8) | byte2
                     
-                    # Convert to voltage
-                    voltage = raw_sample * voltage_rate * probe_mag
+                    # Convert to voltage using offset/scale formula
+                    # voltage is in millivolts, apply probe magnification
+                    voltage_mv = (raw_value - offset_val) * scale_val
+                    voltage = voltage_mv * probe_mag / 1000.0  # Convert mV to V
                     channel_data[channel_name].append(voltage)
                 
                 offset += data_length
