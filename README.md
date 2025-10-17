@@ -9,6 +9,17 @@ Interactive oscilloscope waveform viewer with measurement tools and GPU accelera
 
 Compatible with oscilloscope text data files containing channel metadata and time-series voltage measurements.
 
+## 📖 Documentation
+
+For detailed information about the DSO6084F binary file format, including file structure, decoding procedures, and voltage conversion formulas, see **[BINARY_FORMAT.md](docs/BINARY_FORMAT.md)**.
+
+This includes:
+- Complete file structure breakdown
+- Magic header and JSON metadata parsing
+- Channel data format specifications
+- Voltage conversion formulas with examples
+- Byte order reference and implementation checklist
+
 ## 🚀 Quick Start
 
 ### Download (Windows)
