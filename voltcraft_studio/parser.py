@@ -107,16 +107,26 @@ class ChannelDataParser:
             file_path: Path to the binary file
         """
         with open(file_path, 'rb') as f:
-            # Read magic header and JSON metadata
+            # Read magic header
             magic = f.read(6)
             if magic != ChannelDataParser.MAGIC_HEADER:
                 return
             
+            # Read JSON length
             json_length_bytes = f.read(4)
             json_length = int.from_bytes(json_length_bytes, 'little')
             
-            # Skip JSON data
-            f.seek(10 + json_length)
+            # Read JSON data
+            json_data_bytes = f.read(json_length)
+            json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+            
+            # Truncate JSON to first 150 characters
+            json_truncated = json_text[:150]
+            if len(json_text) > 150:
+                json_truncated += "..."
+            
+            # Calculate wave header offset
+            wave_header_offset = 10 + json_length
             
             # Read first 20 bytes after JSON
             wave_header = f.read(20)
@@ -125,11 +135,15 @@ class ChannelDataParser:
                 print("⚠️  Less than 20 bytes available after JSON")
                 return
             
-            # Calculate the file offset where wave header starts
-            wave_header_offset = 10 + json_length
+            # Display file structure information
+            print("\n📋 FILE STRUCTURE:")
+            print(f"  Bytes 0-5:           Magic header '{magic.decode('utf-8')}' (6 bytes)")
+            print(f"  Bytes 6-9:           JSON length = {json_length} bytes (0x{json_length:04X})")
+            print(f"  Bytes 10-{9+json_length}:      JSON data (truncated): {json_truncated}")
+            print(f"  Bytes {wave_header_offset}+:        Wave data starts here")
             
-            # Display two bytes per line with offsets
-            print("\n Byte Values (Hex):")
+            # Display the first 20 bytes of wave data
+            print(f"\n 🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
             for i in range(0, 20, 2):
                 byte1 = wave_header[i]
                 byte2 = wave_header[i + 1] if i + 1 < 20 else 0
