@@ -65,6 +65,12 @@ class FileLoaderThread(QThread):
             total_time = time.time() - start_time
             file_size_mb = os.path.getsize(self.file_path) / (1024 * 1024)
             
+            # Get CPU info
+            cpu_count = os.cpu_count() or 1
+            # Actual threads used is min(cpu_count, num_channels) for binary files
+            channels_count = len(channels) if is_binary else len(time_series.channel_names)
+            threads_used = min(cpu_count, channels_count) if is_binary else 1
+            
             # Print timing statistics
             print("\n" + "="*70)
             print("📊 FILE LOAD TIMING STATISTICS")
@@ -72,6 +78,8 @@ class FileLoaderThread(QThread):
             print(f"  File: {os.path.basename(self.file_path)}")
             print(f"  Size: {file_size_mb:.2f} MB")
             print(f"  Format: {'Binary (SPBXDS)' if is_binary else 'Text (CSV)'}")
+            print(f"  CPU Cores: {cpu_count} available, {threads_used} threads used for parsing")
+            print(f"  Channels: {channels_count}")
             print(f"\n⏱️  Stage Times:")
             print(f"  File Read:      {read_time*1000:.2f} ms")
             print(f"  Metadata Parse: {metadata_time*1000:.2f} ms")

@@ -469,7 +469,9 @@ class ChannelDataParser:
         if use_parallel and len(channel_configs) > 1:
             # Use parallel processing with ThreadPoolExecutor
             progress_lock = Lock()
-            max_workers = min(4, len(channel_configs))  # Use up to 4 threads
+            # Scale thread count to CPU count (not hardcoded to 4)
+            cpu_count = os.cpu_count() or 4  # Fallback to 4 if cpu_count() returns None
+            max_workers = min(cpu_count, len(channel_configs))
             
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
