@@ -100,158 +100,154 @@ class ChannelDataParser:
         return device_info, channels
     
     @staticmethod
-    def print_wave_header_info(file_path: str):
+    def print_wave_header_info(file_buffer: bytes):
         """
-        Print the binary file structure with offsets and byte values.
+        Print the binary file structure with offsets and byte values using file buffer.
         
         Args:
-            file_path: Path to the binary file
+            file_buffer: Bytes buffer containing the binary file data
         """
-        with open(file_path, 'rb') as f:
-            # Read magic header
-            magic = f.read(6)
-            if magic != ChannelDataParser.MAGIC_HEADER:
-                return
-            
-            # Read JSON length
-            json_length_bytes = f.read(4)
-            json_length = int.from_bytes(json_length_bytes, 'little')
-            
-            # Read JSON data
-            json_data_bytes = f.read(json_length)
-            json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
-            
-            # Truncate JSON to first 150 characters
-            json_truncated = json_text[:150]
-            if len(json_text) > 150:
-                json_truncated += "..."
-            
-            # Calculate wave header offset
-            wave_header_offset = 10 + json_length
-            
-            # Read first 20 bytes after JSON
-            wave_header = f.read(20)
-            
-            if len(wave_header) < 20:
-                print("⚠️  Less than 20 bytes available after JSON")
-                return
-            
-            # Format magic header bytes
-            magic_hex = ' '.join(f'{b:02X}' for b in magic)
-            json_len_hex = ' '.join(f'{b:02X}' for b in json_length_bytes)
-            
-            # Display binary file structure information
-            print("\n📋 BINARY FILE STRUCTURE:")
-            print(f"  0x0000, 6 bytes: {magic_hex} = '{magic.decode('utf-8')}' (Magic Header)")
-            print(f"  0x0006, 4 bytes: {json_len_hex} = {json_length} bytes (JSON Length)")
-            print(f"  0x000A, {json_length} bytes: JSON data (truncated): {json_truncated}")
-            
-            # Parse JSON to extract channel information
-            json_text_full = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
-            json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
-            try:
+        # Validate minimum size
+        if len(file_buffer) < 10:
+            print("⚠️  File too small to contain valid SPBXDS header")
+            return
+        
+        # Read magic header
+        magic = file_buffer[0:6]
+        if magic != ChannelDataParser.MAGIC_HEADER:
+            return
+        
+        # Read JSON length
+        json_length_bytes = file_buffer[6:10]
+        json_length = int.from_bytes(json_length_bytes, 'little')
+        
+        # Read JSON data
+        if 10 + json_length > len(file_buffer):
+            print("⚠️  Invalid JSON length - exceeds file size")
+            return
+        
+        json_data_bytes = file_buffer[10:10 + json_length]
+        json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+        
+        # Truncate JSON to first 150 characters
+        json_truncated = json_text[:150]
+        if len(json_text) > 150:
+            json_truncated += "..."
+        
+        # Format magic header bytes
+        magic_hex = ' '.join(f'{b:02X}' for b in magic)
+        json_len_hex = ' '.join(f'{b:02X}' for b in json_length_bytes)
+        
+        # Display binary file structure information
+        print("\n📋 BINARY FILE STRUCTURE:")
+        print(f"  0x0000, 6 bytes: {magic_hex} = '{magic.decode('utf-8')}' (Magic Header)")
+        print(f"  0x0006, 4 bytes: {json_len_hex} = {json_length} bytes (JSON Length)")
+        print(f"  0x000A, {json_length} bytes: JSON data (truncated): {json_truncated}")
+        
+        # Parse JSON to extract channel information
+        json_text_full = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+        json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
+        try:
+            json_data = json.loads(json_text_full)
+        except json.JSONDecodeError:
+            last_brace = json_text_full.rfind('}')
+            if last_brace != -1:
+                json_text_full = json_text_full[:last_brace + 1]
+                json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
                 json_data = json.loads(json_text_full)
-            except json.JSONDecodeError:
-                last_brace = json_text_full.rfind('}')
-                if last_brace != -1:
-                    json_text_full = json_text_full[:last_brace + 1]
-                    json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
-                    json_data = json.loads(json_text_full)
-                else:
-                    json_data = {}
+            else:
+                json_data = {}
+        
+        # Display channel information
+        channels = json_data.get('channel', [])
+        print(f"\n📊 CHANNELS FROM JSON ({len(channels)} total):")
+        print(f"  Formulas:")
+        print(f"    offset = (reference_zero / 2) % 256")
+        print(f"    scale = voltage_rate × 256")
+        print(f"    voltage_mV = (raw_value - offset) × scale")
+        print(f"  Wave Length Data (4 bytes): little-endian uint32")
+        print(f"  Wave Samples (2 bytes each): big-endian uint16")
+        print()
+        
+        # Track wave data offset for reading channel-specific wave data
+        wave_data_offset = 10 + json_length
+        
+        for ch_idx, ch in enumerate(channels):
+            ch_name = ch.get('Index', '?')
+            ch_ref_zero = ch.get('Reference_Zero', '?')
+            ch_voltage_rate_str = ch.get('Voltage_Rate', '?')
+            availability = ch.get('Availability_Flag', '').upper()
             
-            # Display channel information
-            channels = json_data.get('channel', [])
-            print(f"\n📊 CHANNELS FROM JSON ({len(channels)} total):")
-            print(f"  Formulas:")
-            print(f"    offset = (reference_zero / 2) % 256")
-            print(f"    scale = voltage_rate × 256")
-            print(f"    voltage_mV = (raw_value - offset) × scale")
-            print(f"  Wave Length Data (4 bytes): little-endian uint32")
-            print(f"  Wave Samples (2 bytes each): big-endian uint16")
-            print()
+            print(f"  {ch_name}:")
+            print(f"    Reference_Zero: {ch_ref_zero}")
+            print(f"    Voltage_Rate: {ch_voltage_rate_str}")
             
-            # Track wave data offset for reading channel-specific wave data
-            wave_data_offset = 10 + json_length
-            f.seek(wave_data_offset)
-            
-            for ch_idx, ch in enumerate(channels):
-                ch_name = ch.get('Index', '?')
-                ch_ref_zero = ch.get('Reference_Zero', '?')
-                ch_voltage_rate_str = ch.get('Voltage_Rate', '?')
-                availability = ch.get('Availability_Flag', '').upper()
+            # Calculate offset and scale if we have valid values
+            offset_val = None
+            scale_val = None
+            try:
+                ref_zero_int = int(ch_ref_zero)
+                # Extract numeric value from voltage rate (e.g., "0.781250mv" -> 0.781250)
+                voltage_rate_str = str(ch_voltage_rate_str).replace('mv', '').replace('mV', '')
+                voltage_rate = float(voltage_rate_str)
                 
-                print(f"  {ch_name}:")
-                print(f"    Reference_Zero: {ch_ref_zero}")
-                print(f"    Voltage_Rate: {ch_voltage_rate_str}")
+                # Calculate offset and scale
+                offset_val = (ref_zero_int / 2) % 256
+                scale_val = voltage_rate * 256
                 
-                # Calculate offset and scale if we have valid values
-                offset_val = None
-                scale_val = None
+                print(f"    Calculations:")
+                print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset_val}")
+                print(f"      scale = {voltage_rate} × 256 = {scale_val}")
+            except (ValueError, TypeError):
+                print(f"    Calculations: Unable to calculate (invalid values)")
+            
+            # Read wave data if channel is available
+            if availability == 'TRUE':
                 try:
-                    ref_zero_int = int(ch_ref_zero)
-                    # Extract numeric value from voltage rate (e.g., "0.781250mv" -> 0.781250)
-                    voltage_rate_str = str(ch_voltage_rate_str).replace('mv', '').replace('mV', '')
-                    voltage_rate = float(voltage_rate_str)
+                    # Get offset of channel length bytes
+                    ch_len_offset = wave_data_offset
                     
-                    # Calculate offset and scale
-                    offset_val = (ref_zero_int / 2) % 256
-                    scale_val = voltage_rate * 256
-                    
-                    print(f"    Calculations:")
-                    print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset_val}")
-                    print(f"      scale = {voltage_rate} × 256 = {scale_val}")
-                except (ValueError, TypeError):
-                    print(f"    Calculations: Unable to calculate (invalid values)")
-                
-                # Read wave data if channel is available
-                if availability == 'TRUE':
-                    try:
-                        # Get offset of channel length bytes
-                        ch_len_offset = f.tell()
+                    # Read 4 bytes for channel data length from buffer
+                    if ch_len_offset + 4 <= len(file_buffer):
+                        ch_len_bytes = file_buffer[ch_len_offset:ch_len_offset + 4]
+                        ch_data_len = int.from_bytes(ch_len_bytes, 'little')
                         
-                        # Read 4 bytes for channel data length
-                        ch_len_bytes = f.read(4)
-                        if len(ch_len_bytes) == 4:
-                            ch_data_len = int.from_bytes(ch_len_bytes, 'little')
+                        # Format the channel length bytes
+                        ch_len_hex = ' '.join(f'{b:02X}' for b in ch_len_bytes)
+                        
+                        # Get current offset for first data byte
+                        current_offset = ch_len_offset + 4
+                        
+                        # Read first 10 bytes of wave data from buffer
+                        wave_data_preview = file_buffer[current_offset:min(current_offset + 10, len(file_buffer))]
+                        
+                        print(f"    Wave Data:")
+                        print(f"      0x{ch_len_offset:04X}, 4 bytes: {ch_len_hex} = {ch_data_len} bytes (Channel Data Length)")
+                        print(f"      First 10 bytes (at offset 0x{current_offset:04X} / {current_offset}):")
+                        
+                        # Format the preview bytes in 2-byte pairs
+                        for i in range(0, len(wave_data_preview), 2):
+                            byte1 = wave_data_preview[i]
+                            byte2 = wave_data_preview[i + 1] if i + 1 < len(wave_data_preview) else 0
+                            byte_offset = current_offset + i
+                            byte_hex = f'{byte1:02X} {byte2:02X}'
                             
-                            # Format the channel length bytes
-                            ch_len_hex = ' '.join(f'{b:02X}' for b in ch_len_bytes)
+                            # Interpret as 16-bit unsigned integer (big-endian)
+                            raw_value = (byte1 << 8) | byte2
                             
-                            # Get current offset for first data byte
-                            current_offset = f.tell()
-                            
-                            # Read first 10 bytes of wave data
-                            wave_data_preview = f.read(min(10, ch_data_len))
-                            
-                            print(f"    Wave Data:")
-                            print(f"      0x{ch_len_offset:04X}, 4 bytes: {ch_len_hex} = {ch_data_len} bytes (Channel Data Length)")
-                            print(f"      First 10 bytes (at offset 0x{current_offset:04X} / {current_offset}):")
-                            
-                            # Format the preview bytes in 2-byte pairs
-                            for i in range(0, len(wave_data_preview), 2):
-                                byte1 = wave_data_preview[i]
-                                byte2 = wave_data_preview[i + 1] if i + 1 < len(wave_data_preview) else 0
-                                byte_offset = current_offset + i
-                                byte_hex = f'{byte1:02X} {byte2:02X}'
-                                
-                                # Interpret as 16-bit unsigned integer (big-endian)
-                                raw_value = (byte1 << 8) | byte2
-                                
-                                # Calculate voltage if we have valid offset and scale
-                                if offset_val is not None and scale_val is not None:
-                                    voltage_mV = (raw_value - offset_val) * scale_val
-                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value} → voltage_mV = ({raw_value} - {offset_val}) × {scale_val} = {voltage_mV}")
-                                else:
-                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
-                            
-                            # Seek to next channel's data
-                            wave_data_offset += 4 + ch_data_len
-                            f.seek(wave_data_offset)
-                    except Exception as e:
-                        print(f"    Wave Data: Error reading ({e})")
-                
-                print()
+                            # Calculate voltage if we have valid offset and scale
+                            if offset_val is not None and scale_val is not None:
+                                voltage_mV = (raw_value - offset_val) * scale_val
+                                print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value} → voltage_mV = ({raw_value} - {offset_val}) × {scale_val} = {voltage_mV}")
+                            else:
+                                print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
+                        
+                        # Advance to next channel's data
+                        wave_data_offset += 4 + ch_data_len
+                except Exception as e:
+                    print(f"    Wave Data: Error reading ({e})")
+            
+            print()
     
     @staticmethod
     def _process_single_channel(
@@ -421,7 +417,7 @@ class ChannelDataParser:
             channels.append(channel)
         
         # Print wave header info
-        ChannelDataParser.print_wave_header_info(file_path)
+        ChannelDataParser.print_wave_header_info(file_buffer)
         
         # Parse binary channel data
         if progress_callback:
