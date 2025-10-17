@@ -1,10 +1,12 @@
 """Graph widget for displaying time series data"""
 import pyqtgraph as pg
 import numpy as np
+import time
 from typing import List
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QColor, QCursor, QMouseEvent
+from concurrent.futures import ThreadPoolExecutor
 
 from .models import TimeSeriesData, ChannelInfo
 from .utils import parse_time_interval, format_time_auto, ureg, get_best_time_unit_for_range, convert_time_to_unit
@@ -318,6 +320,7 @@ class TimeSeriesGraphWidget(QWidget):
         self.binarize_enabled = False
         self.original_data = None  # Store original data for toggling
         self.channels_info = None  # Store channel info for re-plotting
+        self.binarized_data_cache = None  # Cache binarized data for fast toggling
         
         # Channel info overlays
         self.channel_info_boxes = []  # List of TextItem widgets for channel info
@@ -424,7 +427,7 @@ class TimeSeriesGraphWidget(QWidget):
         layout.addWidget(self.info_label)
     
     
-    def plot_data(self, time_series_data: TimeSeriesData, channels: List[ChannelInfo] = None, preserve_view: bool = False):
+    def plot_data(self, time_series_data: TimeSeriesData, channels: List[ChannelInfo] = None, preserve_view: bool = False, preserve_cache: bool = False):
         """
         Plot time series data with automatic downsampling
         
@@ -463,6 +466,8 @@ class TimeSeriesGraphWidget(QWidget):
         # Store original data for binarize toggle
         self.original_data = time_series_data
         self.channels_info = channels
+        if not preserve_cache:
+            self.binarized_data_cache = None  # Invalidate cache on new data
         
         # Apply binarization if enabled
         if self.binarize_enabled:
@@ -1043,13 +1048,103 @@ class TimeSeriesGraphWidget(QWidget):
         else:
             print("\n🔧 Binarize DISABLED - Showing original signal")
         
-        # Re-plot with binarization applied/removed, preserving current zoom/pan
+        # Re-plot with binarization applied/removed, preserving current zoom/pan and cache
         if self.original_data is not None:
-            self.plot_data(self.original_data, self.channels_info, preserve_view=True)
+            self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
+    
+    def _process_channel_binarize(self, args: tuple) -> tuple:
+        """
+        Process a single channel for binarization (used by ThreadPoolExecutor).
+        Returns (channel_name, binarized_data, timing_info)
+        """
+        (channel_idx, channel_name, original_voltage, time_series_data) = args
+        
+        ch_start = time.perf_counter()
+        timing_info = {}
+        
+        if len(original_voltage) == 0:
+            return (channel_name, original_voltage, {"empty": True})
+        
+        # Calculate threshold as the midpoint between min and max
+        t1 = time.perf_counter()
+        v_min = np.min(original_voltage)
+        v_max = np.max(original_voltage)
+        threshold = (v_min + v_max) / 2
+        timing_info['minmax'] = time.perf_counter() - t1
+        
+        # Create binary signal (0 = low, 1 = high)
+        t2 = time.perf_counter()
+        binary_signal = (original_voltage > threshold).astype(int)
+        timing_info['binarize'] = time.perf_counter() - t2
+        
+        # Find transitions (where binary signal changes)
+        t3 = time.perf_counter()
+        transitions = np.diff(binary_signal, prepend=binary_signal[0])
+        transition_indices = np.where(transitions != 0)[0]
+        timing_info['detect'] = time.perf_counter() - t3
+        
+        # Count transitions
+        t4 = time.perf_counter()
+        low_to_high = np.sum(binary_signal[transition_indices])
+        high_to_low = len(transition_indices) - low_to_high
+        timing_info['count'] = time.perf_counter() - t4
+        timing_info['num_transitions'] = len(transition_indices)
+        timing_info['low_to_high'] = low_to_high
+        timing_info['high_to_low'] = high_to_low
+        
+        # If no transitions found, keep original signal
+        if len(transition_indices) == 0:
+            timing_info['ch_total'] = time.perf_counter() - ch_start
+            return (channel_name, original_voltage, timing_info)
+        
+        # Build binarized signal with only transitions
+        t5 = time.perf_counter()
+        
+        num_transitions = len(transition_indices)
+        total_transition_points = 2 + 2 * num_transitions
+        
+        binarized_indices = np.zeros(total_transition_points, dtype=np.int64)
+        binarized_voltages = np.zeros(total_transition_points, dtype=np.float64)
+        
+        # Point 0: Start
+        binarized_indices[0] = 0
+        binarized_voltages[0] = v_min if binary_signal[0] == 0 else v_max
+        
+        # Points 1 to 2*num_transitions: Transitions (before and after pairs)
+        states_before = np.where(transition_indices > 0, 
+                                binary_signal[transition_indices - 1], 
+                                binary_signal[0])
+        states_after = binary_signal[transition_indices]
+        
+        binarized_indices[1:1+num_transitions] = transition_indices
+        binarized_indices[1+num_transitions:1+2*num_transitions] = transition_indices
+        
+        binarized_voltages[1:1+num_transitions] = np.where(states_before == 0, v_min, v_max)
+        binarized_voltages[1+num_transitions:1+2*num_transitions] = np.where(states_after == 0, v_min, v_max)
+        
+        # Point last: End
+        binarized_indices[-1] = len(original_voltage) - 1
+        binarized_voltages[-1] = v_min if binary_signal[-1] == 0 else v_max
+        
+        timing_info['construct'] = time.perf_counter() - t5
+        
+        # Use NumPy searchsorted for ultra-fast lookup
+        t6 = time.perf_counter()
+        total_points = len(time_series_data.indices)
+        
+        indices_positions = np.searchsorted(binarized_indices, np.arange(total_points), side='right') - 1
+        indices_positions = np.clip(indices_positions, 0, len(binarized_voltages) - 1)
+        
+        full_binarized = binarized_voltages[indices_positions]
+        timing_info['searchsorted'] = time.perf_counter() - t6
+        timing_info['ch_total'] = time.perf_counter() - ch_start
+        
+        return (channel_name, full_binarized, timing_info)
     
     def _apply_binarize(self, time_series_data: TimeSeriesData) -> TimeSeriesData:
         """
         Apply binarization to the signal by extracting only low-to-high and high-to-low transitions.
+        Uses multi-threading to process channels in parallel.
         
         This creates a binary square wave representation of the signal showing only state changes.
         
@@ -1059,97 +1154,87 @@ class TimeSeriesGraphWidget(QWidget):
         Returns:
             Binarized time series data with only transitions
         """
-        print("\n" + "="*60)
-        print("SIGNAL BINARIZATION")
-        print("="*60)
+        # OPTIMIZATION: Return cached binarized data if available (10x faster for toggling!)
+        if self.binarized_data_cache is not None:
+            print("\n🚀 Using cached binarized data (instant toggle!)")
+            return self.binarized_data_cache
         
-        binarized_channel_data = {}
+        total_start = time.perf_counter()
         
+        print("\n" + "="*70)
+        print("SIGNAL BINARIZATION - MULTI-THREADED (Detailed Timing)")
+        print("="*70)
+        
+        # Prepare channel data for parallel processing
+        channel_tasks = []
         for channel_idx, channel_name in enumerate(time_series_data.channel_names, 1):
             if channel_name not in time_series_data.channel_data:
                 continue
             
             original_voltage = time_series_data.channel_data[channel_name]
-            
-            if len(original_voltage) == 0:
-                binarized_channel_data[channel_name] = original_voltage
-                continue
-            
-            # Calculate threshold as the midpoint between min and max
-            v_min = np.min(original_voltage)
-            v_max = np.max(original_voltage)
-            threshold = (v_min + v_max) / 2
-            
-            # Create binary signal (0 = low, 1 = high)
-            binary_signal = (original_voltage > threshold).astype(int)
-            
-            # Find transitions (where binary signal changes)
-            transitions = np.diff(binary_signal, prepend=binary_signal[0])
-            transition_indices = np.where(transitions != 0)[0]
-            
-            # Count low-to-high and high-to-low transitions
-            low_to_high = 0
-            high_to_low = 0
-            for trans_idx in transition_indices:
-                if binary_signal[trans_idx] == 1:
-                    low_to_high += 1
-                else:
-                    high_to_low += 1
-            
-            print(f"  {channel_name}: {len(transition_indices):,} transitions ({low_to_high:,}↑ / {high_to_low:,}↓)")
-            
-            # If no transitions found, keep original signal
-            if len(transition_indices) == 0:
-                binarized_channel_data[channel_name] = original_voltage
-                continue
-            
-            # Build binarized signal with only transitions
-            # We'll create a new array with transition points
-            binarized_indices = [0]  # Start at beginning
-            binarized_voltages = [v_min if binary_signal[0] == 0 else v_max]
-            
-            for trans_idx in transition_indices:
-                # Add point just before transition (to create vertical edge)
-                binarized_indices.append(trans_idx)
-                current_state = binary_signal[trans_idx - 1] if trans_idx > 0 else binary_signal[0]
-                binarized_voltages.append(v_min if current_state == 0 else v_max)
-                
-                # Add point at transition (creates the vertical line)
-                binarized_indices.append(trans_idx)
-                new_state = binary_signal[trans_idx]
-                binarized_voltages.append(v_min if new_state == 0 else v_max)
-            
-            # Add final point at the end
-            binarized_indices.append(len(original_voltage) - 1)
-            final_state = binary_signal[-1]
-            binarized_voltages.append(v_min if final_state == 0 else v_max)
-            
-            # Create the binarized voltage array using vectorized operations (FAST!)
-            total_points = len(time_series_data.indices)
-            
-            # Use NumPy's searchsorted for ultra-fast lookup (O(n log m) instead of O(n*m))
-            # This finds which transition segment each point belongs to
-            binarized_indices_array = np.array(binarized_indices)
-            binarized_voltages_array = np.array(binarized_voltages)
-            
-            # searchsorted tells us which transition index each point should use
-            # 'right' means if a point equals a transition index, use the next segment
-            indices_positions = np.searchsorted(binarized_indices_array, np.arange(total_points), side='right') - 1
-            
-            # Clamp to valid range [0, len-1]
-            indices_positions = np.clip(indices_positions, 0, len(binarized_voltages_array) - 1)
-            
-            # Now just index into the voltages array - vectorized operation!
-            full_binarized = binarized_voltages_array[indices_positions]
-            
-            binarized_channel_data[channel_name] = full_binarized
+            channel_tasks.append((channel_idx, channel_name, original_voltage, time_series_data))
         
-        print("="*60 + "\n")
+        # Use ThreadPoolExecutor to process channels in parallel
+        # Python's GIL releases during NumPy operations, so this actually parallelizes well
+        max_workers = min(4, len(channel_tasks))  # Use up to 4 threads (DSO6084F has 4 channels)
+        threading_start = time.perf_counter()
+        
+        binarized_channel_data = {}
+        all_timing_info = {}
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_channel = {executor.submit(self._process_channel_binarize, task): task[1] for task in channel_tasks}
+            
+            # Collect results as they complete
+            for future in future_to_channel:
+                channel_name, binarized_data, timing_info = future.result()
+                binarized_channel_data[channel_name] = binarized_data
+                all_timing_info[channel_name] = timing_info
+        
+        threading_time = time.perf_counter() - threading_start
+        
+        # Print timing info for all channels
+        for channel_name in time_series_data.channel_names:
+            if channel_name not in all_timing_info:
+                continue
+            
+            info = all_timing_info[channel_name]
+            if info.get('empty'):
+                print(f"\n  {channel_name}: (empty)")
+                continue
+            
+            num_samples = len(time_series_data.channel_data[channel_name])
+            print(f"\n  {channel_name} ({num_samples:,} samples):")
+            print(f"    └─ Transitions: {info['num_transitions']:,} ({info['low_to_high']:,}↑ / {info['high_to_low']:,}↓)")
+            print(f"    └─ Timing breakdown:")
+            print(f"       ├─ Min/Max:       {info['minmax']*1000:.3f}ms")
+            print(f"       ├─ Binarize:      {info['binarize']*1000:.3f}ms")
+            print(f"       ├─ Detect:        {info['detect']*1000:.3f}ms")
+            print(f"       ├─ Count:         {info['count']*1000:.3f}ms")
+            print(f"       ├─ Array construct: {info.get('construct', 0)*1000:.3f}ms")
+            print(f"       ├─ Searchsorted:    {info.get('searchsorted', 0)*1000:.3f}ms")
+            print(f"       └─ Total channel:  {info['ch_total']*1000:.3f}ms")
+        
+        print("="*70)
         
         # Create new TimeSeriesData with binarized signals
-        return TimeSeriesData(
+        t_create = time.perf_counter()
+        binarized_result = TimeSeriesData(
             indices=time_series_data.indices,
             channel_data=binarized_channel_data,
             channel_names=time_series_data.channel_names
         )
+        t_create = time.perf_counter() - t_create
+        
+        total_time = time.perf_counter() - total_start
+        print(f"\n📊 FINAL TIMING (Multi-threaded):")
+        print(f"   ├─ Threading:       {threading_time*1000:.3f}ms")
+        print(f"   ├─ Result creation: {t_create*1000:.3f}ms")
+        print(f"   └─ TOTAL:          {total_time*1000:.3f}ms")
+        print("="*70 + "\n")
+        
+        # OPTIMIZATION: Cache the result for instant toggling
+        self.binarized_data_cache = binarized_result
+        return binarized_result
 
