@@ -227,7 +227,11 @@ class ChannelDataParser:
                                 byte2 = wave_data_preview[i + 1] if i + 1 < len(wave_data_preview) else 0
                                 offset = current_offset + i
                                 byte_hex = f'{byte1:02X} {byte2:02X}'
-                                print(f"        0x{offset:04X}, 2 bytes: {byte_hex}")
+                                
+                                # Interpret as 16-bit unsigned integer (big-endian)
+                                raw_value = (byte1 << 8) | byte2
+                                
+                                print(f"        0x{offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
                             
                             # Seek to next channel's data
                             wave_data_offset += 4 + ch_data_len
