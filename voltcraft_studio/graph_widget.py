@@ -1164,6 +1164,13 @@ class TimeSeriesGraphWidget(QWidget):
                 except:
                     pass
             self.channel_offset_handles.clear()
+            
+            # Reset channel offsets to 0 when disabling relative Y-axis mode
+            self.channel_offsets.clear()
+            
+            # Re-plot to show channels back at original positions
+            if self.original_data is not None:
+                self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
     
     def _update_relative_y_annotation(self):
         """Update or create the relative Y-axis annotation (e.g., '1 mV/div')"""
