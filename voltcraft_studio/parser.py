@@ -144,6 +144,29 @@ class ChannelDataParser:
             print(f"  0x0006, 4 bytes: {json_len_hex} = {json_length} bytes (JSON Length)")
             print(f"  0x000A, {json_length} bytes: JSON data (truncated): {json_truncated}")
             
+            # Parse JSON to extract channel information
+            json_text_full = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+            json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
+            try:
+                json_data = json.loads(json_text_full)
+            except json.JSONDecodeError:
+                last_brace = json_text_full.rfind('}')
+                if last_brace != -1:
+                    json_text_full = json_text_full[:last_brace + 1]
+                    json_text_full = re.sub(r',(\s*[}\]])', r'\1', json_text_full)
+                    json_data = json.loads(json_text_full)
+                else:
+                    json_data = {}
+            
+            # Display channel information
+            channels = json_data.get('channel', [])
+            print(f"\n📊 CHANNELS FROM JSON ({len(channels)} total):")
+            for ch in channels:
+                ch_name = ch.get('Index', '?')
+                ch_ref_zero = ch.get('Reference_Zero', '?')
+                ch_voltage_rate = ch.get('Voltage_Rate', '?')
+                print(f"  {ch_name}: Reference_Zero={ch_ref_zero}, Voltage_Rate={ch_voltage_rate}")
+            
             # Display the first 20 bytes of wave data
             print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
             
