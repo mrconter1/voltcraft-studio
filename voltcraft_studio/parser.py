@@ -24,47 +24,65 @@ class ChannelDataParser:
     MAGIC_HEADER = b'SPBXDS'
     
     @staticmethod
-    def is_binary_format(file_path: str) -> bool:
+    def is_binary_format(file_path: str, file_buffer: Optional[bytes] = None) -> bool:
         """
         Check if file is in OWON SPBXDS binary format
         
         Args:
             file_path: Path to the file to check
+            file_buffer: Optional pre-loaded file buffer (to avoid redundant open)
             
         Returns:
             True if file has SPBXDS magic header, False otherwise
         """
         try:
-            with open(file_path, 'rb') as f:
-                header = f.read(6)
-                return header == ChannelDataParser.MAGIC_HEADER
+            if file_buffer is not None:
+                # Use provided buffer
+                header = file_buffer[0:6] if len(file_buffer) >= 6 else b''
+            else:
+                # Open file to check header
+                with open(file_path, 'rb') as f:
+                    header = f.read(6)
+            return header == ChannelDataParser.MAGIC_HEADER
         except:
             return False
     
     @staticmethod
-    def parse_binary_metadata_only(file_path: str) -> Tuple[DeviceInfo, List[ChannelInfo]]:
+    def parse_binary_metadata_only(file_path: str, file_buffer: Optional[bytes] = None) -> Tuple[DeviceInfo, List[ChannelInfo]]:
         """
         Parse only the channel metadata from OWON binary file (fast)
         
         Args:
             file_path: Path to the binary file to parse
+            file_buffer: Optional pre-loaded file buffer (to avoid redundant open)
             
         Returns:
             Tuple of (DeviceInfo, List of ChannelInfo objects)
         """
-        with open(file_path, 'rb') as f:
-            # Read and validate magic header
-            magic = f.read(6)
-            if magic != ChannelDataParser.MAGIC_HEADER:
-                raise ValueError("Invalid SPBXDS file format")
-            
-            # Read JSON length (4 bytes, little-endian)
-            json_length_bytes = f.read(4)
-            json_length = int.from_bytes(json_length_bytes, 'little')
-            
-            # Read and parse JSON
-            json_data_bytes = f.read(json_length)
+        # Read file if buffer not provided
+        if file_buffer is None:
+            with open(file_path, 'rb') as f:
+                file_buffer = f.read()
         
+        # Validate minimum size
+        if len(file_buffer) < 10:
+            raise ValueError("File too small to be valid SPBXDS format")
+        
+        # Read and validate magic header
+        magic = file_buffer[0:6]
+        if magic != ChannelDataParser.MAGIC_HEADER:
+            raise ValueError("Invalid SPBXDS file format")
+        
+        # Read JSON length (4 bytes, little-endian)
+        json_length_bytes = file_buffer[6:10]
+        json_length = int.from_bytes(json_length_bytes, 'little')
+        
+        # Read and parse JSON
+        if 10 + json_length > len(file_buffer):
+            raise ValueError("Invalid JSON length in file header")
+        
+        json_data_bytes = file_buffer[10:10 + json_length]
+    
         # Decode JSON with error handling
         json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
         
@@ -334,7 +352,7 @@ class ChannelDataParser:
         return channel_name, voltage_array
     
     @staticmethod
-    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None, use_parallel: bool = True) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
+    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None, use_parallel: bool = True, file_buffer: Optional[bytes] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from OWON binary file with streaming and progress updates
         Supports both parallel and sequential processing.
@@ -343,6 +361,7 @@ class ChannelDataParser:
             file_path: Path to the binary file to parse
             progress_callback: Optional callback function(percent, message) for progress updates
             use_parallel: If True, process channels in parallel (default True)
+            file_buffer: Optional pre-loaded file buffer (to avoid redundant open)
             
         Returns:
             Tuple of (DeviceInfo, List of ChannelInfo objects, TimeSeriesData object)
@@ -352,9 +371,13 @@ class ChannelDataParser:
         if progress_callback:
             progress_callback(PARSER_PROGRESS_METADATA_START, "Reading binary file into memory...")
         
-        # Read entire file into memory ONCE (more efficient for parallel processing)
-        with open(file_path, 'rb') as f:
-            file_buffer = f.read()
+        # Read file into memory if buffer not provided
+        if file_buffer is None:
+            with open(file_path, 'rb') as f:
+                file_buffer = f.read()
+        else:
+            if progress_callback:
+                progress_callback(PARSER_PROGRESS_METADATA_START, "Using pre-loaded buffer...")
         
         if progress_callback:
             progress_callback(PARSER_PROGRESS_METADATA_START, "Reading binary header...")
