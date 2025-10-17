@@ -166,10 +166,15 @@ class ChannelDataParser:
             print(f"    scale = voltage_rate × 256")
             print()
             
-            for ch in channels:
+            # Track wave data offset for reading channel-specific wave data
+            wave_data_offset = 10 + json_length
+            f.seek(wave_data_offset)
+            
+            for ch_idx, ch in enumerate(channels):
                 ch_name = ch.get('Index', '?')
                 ch_ref_zero = ch.get('Reference_Zero', '?')
                 ch_voltage_rate_str = ch.get('Voltage_Rate', '?')
+                availability = ch.get('Availability_Flag', '').upper()
                 
                 print(f"  {ch_name}:")
                 print(f"    Reference_Zero: {ch_ref_zero}")
@@ -192,24 +197,45 @@ class ChannelDataParser:
                 except (ValueError, TypeError):
                     print(f"    Calculations: Unable to calculate (invalid values)")
                 
+                # Read wave data if channel is available
+                if availability == 'TRUE':
+                    try:
+                        # Get offset of channel length bytes
+                        ch_len_offset = f.tell()
+                        
+                        # Read 4 bytes for channel data length
+                        ch_len_bytes = f.read(4)
+                        if len(ch_len_bytes) == 4:
+                            ch_data_len = int.from_bytes(ch_len_bytes, 'little')
+                            
+                            # Format the channel length bytes
+                            ch_len_hex = ' '.join(f'{b:02X}' for b in ch_len_bytes)
+                            
+                            # Get current offset for first data byte
+                            current_offset = f.tell()
+                            
+                            # Read first 10 bytes of wave data
+                            wave_data_preview = f.read(min(10, ch_data_len))
+                            
+                            print(f"    Wave Data:")
+                            print(f"      0x{ch_len_offset:04X}, 4 bytes: {ch_len_hex} = {ch_data_len} bytes (Channel Data Length)")
+                            print(f"      First 10 bytes (at offset 0x{current_offset:04X}):")
+                            
+                            # Format the preview bytes in 2-byte pairs
+                            for i in range(0, len(wave_data_preview), 2):
+                                byte1 = wave_data_preview[i]
+                                byte2 = wave_data_preview[i + 1] if i + 1 < len(wave_data_preview) else 0
+                                offset = current_offset + i
+                                byte_hex = f'{byte1:02X} {byte2:02X}'
+                                print(f"        0x{offset:04X}, 2 bytes: {byte_hex}")
+                            
+                            # Seek to next channel's data
+                            wave_data_offset += 4 + ch_data_len
+                            f.seek(wave_data_offset)
+                    except Exception as e:
+                        print(f"    Wave Data: Error reading ({e})")
+                
                 print()
-            
-            # Display the first 20 bytes of wave data
-            print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
-            
-            # First 4 bytes are wave series length
-            wave_len_bytes = wave_header[0:4]
-            wave_len_hex = ' '.join(f'{b:02X}' for b in wave_len_bytes)
-            wave_len = int.from_bytes(wave_len_bytes, 'little')
-            print(f"  0x{wave_header_offset:04X}, 4 bytes: {wave_len_hex} = {wave_len} bytes (Wave Series Length)")
-            
-            # Remaining bytes in 2-byte pairs
-            for i in range(4, 20, 2):
-                byte1 = wave_header[i]
-                byte2 = wave_header[i + 1] if i + 1 < 20 else 0
-                offset = wave_header_offset + i
-                byte_hex = f'{byte1:02X} {byte2:02X}'
-                print(f"  0x{offset:04X}, 2 bytes: {byte_hex}")
     
     @staticmethod
     def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
