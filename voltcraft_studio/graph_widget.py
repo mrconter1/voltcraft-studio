@@ -1288,7 +1288,7 @@ class TimeSeriesGraphWidget(QWidget):
             
             # Create handle text item
             handle = pg.TextItem(
-                text=f"◆ {channel.name}",
+                text=f"⬍ {channel.name}",
                 color=color,
                 fill=(30, 30, 30, 220),
                 border=pg.mkPen(color=color, width=2),
