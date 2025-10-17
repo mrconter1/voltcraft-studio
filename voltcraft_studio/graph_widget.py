@@ -500,10 +500,10 @@ class TimeSeriesGraphWidget(QWidget):
                 pass
         
         # Create a fresh legend
-        self.legend = self.plot_widget.addLegend(
-            brush=(30, 30, 30, 180),
-            pen={'color': '#666666', 'width': 1}
-        )
+        # self.legend = self.plot_widget.addLegend(
+        #     brush=(30, 30, 30, 180),
+        #     pen={'color': '#666666', 'width': 1}
+        # )
         
         if not time_series_data or len(time_series_data.indices) == 0:
             self.info_label.setText("No data to display")
