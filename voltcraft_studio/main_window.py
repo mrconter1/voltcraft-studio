@@ -565,7 +565,7 @@ class MainWindow(QMainWindow):
     def toggle_relative_y(self):
         """Toggle relative Y-axis adjustment mode on/off"""
         is_relative_y_enabled = self.relative_y_action.isChecked()
-        # TODO: Implement relative Y-axis mode toggle functionality
+        self.graph_widget.set_relative_y_axis(is_relative_y_enabled)
     
     def toggle_binarize(self):
         """Toggle signal binarization on/off"""

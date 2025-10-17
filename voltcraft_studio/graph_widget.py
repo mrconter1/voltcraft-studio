@@ -18,10 +18,15 @@ class DynamicVoltageAxisItem(pg.AxisItem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.parent_plot_widget = None
+        self.relative_y_mode = False  # Flag for relative Y-axis mode
         
     def set_parent_plot_widget(self, plot_widget):
         """Set reference to parent plot widget to access view range"""
         self.parent_plot_widget = plot_widget
+    
+    def set_relative_y_mode(self, enabled: bool):
+        """Enable or disable relative Y-axis mode"""
+        self.relative_y_mode = enabled
     
     def tickStrings(self, values, scale, spacing):
         """Override tick string formatting with dynamic voltage unit selection"""
@@ -73,14 +78,21 @@ class DynamicVoltageAxisItem(pg.AxisItem):
         else:
             decimal_places = 2
         
-        # Format all tick values with unit suffix
+        # Format tick values
         strings = []
-        for value in values:
-            try:
-                magnitude = value * scale_factor
-                strings.append(f"{magnitude:.{decimal_places}f} {best_unit}")
-            except Exception:
-                strings.append(f"{value:.3g}")
+        
+        if self.relative_y_mode:
+            # In relative mode, return empty tick labels (will show annotation instead)
+            for value in values:
+                strings.append("")
+        else:
+            # Absolute mode - show actual values as before
+            for value in values:
+                try:
+                    magnitude = value * scale_factor
+                    strings.append(f"{magnitude:.{decimal_places}f} {best_unit}")
+                except Exception:
+                    strings.append(f"{value:.3g}")
         
         return strings
 
@@ -324,6 +336,7 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Channel info overlays
         self.channel_info_boxes = []  # List of TextItem widgets for channel info
+        self.relative_y_annotation = None # TextItem for relative Y-axis annotation
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -702,6 +715,7 @@ class TimeSeriesGraphWidget(QWidget):
     def _on_view_range_changed(self):
         """Handle view range changes to update channel info box positions"""
         self._update_channel_info_positions()
+        self._update_relative_y_annotation()
     
     def clear(self):
         """Clear the plot"""
@@ -1051,6 +1065,96 @@ class TimeSeriesGraphWidget(QWidget):
         # Re-plot with binarization applied/removed, preserving current zoom/pan and cache
         if self.original_data is not None:
             self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
+    
+    def set_relative_y_axis(self, enabled: bool):
+        """Enable or disable relative Y-axis mode"""
+        self.voltage_axis.set_relative_y_mode(enabled)
+        
+        # Invalidate the axis cache to force redraw of tick strings
+        self.voltage_axis.picture = None
+        self.plot_widget.update()
+        
+        # Update the annotation
+        self._update_relative_y_annotation()
+    
+    def _update_relative_y_annotation(self):
+        """Update or create the relative Y-axis annotation (e.g., '1 mV/div')"""
+        # Remove old annotation if it exists
+        if self.relative_y_annotation is not None:
+            try:
+                self.plot_widget.removeItem(self.relative_y_annotation)
+            except:
+                pass
+            self.relative_y_annotation = None
+        
+        # Only create annotation if relative mode is enabled
+        if not self.voltage_axis.relative_y_mode:
+            return
+        
+        # Get current view range to calculate tick spacing
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        view_range = view_box.viewRange()
+        y_min, y_max = view_range[1]
+        y_range = y_max - y_min
+        
+        # CALCULATION: How to get "value per div"
+        # ==========================================
+        # Step 1: Get visible voltage range from current zoom level
+        #   y_range = y_max - y_min (total visible height in mV)
+        #   Example: If zoomed to show -5mV to +5mV, y_range = 10mV
+        
+        # Step 2: Estimate spacing between major tick marks
+        #   PyQtGraph typically draws 4-5 major tick marks on the axis
+        #   So we divide the total range by 5 to get approximate spacing
+        #   estimated_tick_spacing = y_range / 5
+        #   Example: 10mV / 5 = 2mV per major tick = 2mV/div
+        estimated_tick_spacing = y_range / 5
+        
+        # Step 3: Choose the best unit based on spacing magnitude
+        #   This prevents showing 0.001 mV/div (use µV instead)
+        #   or 5000 mV/div (use V instead)
+        if estimated_tick_spacing < 1:
+            best_unit = 'µV'
+            scale_factor = 1000  # Convert mV to µV
+            display_spacing = estimated_tick_spacing * scale_factor
+        elif estimated_tick_spacing < 1000:
+            best_unit = 'mV'
+            scale_factor = 1  # Already in mV
+            display_spacing = estimated_tick_spacing * scale_factor
+        else:
+            best_unit = 'V'
+            scale_factor = 0.001  # Convert mV to V
+            display_spacing = estimated_tick_spacing * scale_factor
+        
+        # Step 4: Format with appropriate precision
+        #   Small values need more decimal places for readability
+        if display_spacing < 0.1:
+            annotation_text = f"{display_spacing:.3f} {best_unit}/div"
+        elif display_spacing < 1:
+            annotation_text = f"{display_spacing:.2f} {best_unit}/div"
+        elif display_spacing < 10:
+            annotation_text = f"{display_spacing:.1f} {best_unit}/div"
+        else:
+            annotation_text = f"{display_spacing:.0f} {best_unit}/div"
+        
+        # Create annotation text item
+        self.relative_y_annotation = pg.TextItem(
+            text=annotation_text,
+            color=(200, 200, 200),
+            fill=(30, 30, 30, 200),
+            border=(100, 100, 100),
+            anchor=(1.0, 1.0)  # Bottom-right anchor
+        )
+        
+        # Position in the top-left area (near the axis label)
+        x_pos = view_range[0][0] + (view_range[0][1] - view_range[0][0]) * 0.05
+        y_pos = view_range[1][1] - (view_range[1][1] - view_range[1][0]) * 0.1
+        self.relative_y_annotation.setPos(x_pos, y_pos)
+        
+        self.plot_widget.addItem(self.relative_y_annotation, ignoreBounds=True)
     
     def _process_channel_binarize(self, args: tuple) -> tuple:
         """
