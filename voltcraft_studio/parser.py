@@ -146,7 +146,15 @@ class ChannelDataParser:
             
             # Display the first 20 bytes of wave data
             print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
-            for i in range(0, 20, 2):
+            
+            # First 4 bytes are wave series length
+            wave_len_bytes = wave_header[0:4]
+            wave_len_hex = ' '.join(f'{b:02X}' for b in wave_len_bytes)
+            wave_len = int.from_bytes(wave_len_bytes, 'little')
+            print(f"  0x{wave_header_offset:04X}, 4 bytes: {wave_len_hex} = {wave_len} bytes (Wave Series Length)")
+            
+            # Remaining bytes in 2-byte pairs
+            for i in range(4, 20, 2):
                 byte1 = wave_header[i]
                 byte2 = wave_header[i + 1] if i + 1 < 20 else 0
                 offset = wave_header_offset + i
