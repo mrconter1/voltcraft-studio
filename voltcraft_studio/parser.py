@@ -143,7 +143,6 @@ class ChannelDataParser:
             print(f"  0x0000, 6 bytes: {magic_hex} = '{magic.decode('utf-8')}' (Magic Header)")
             print(f"  0x0006, 4 bytes: {json_len_hex} = {json_length} bytes (JSON Length)")
             print(f"  0x000A, {json_length} bytes: JSON data (truncated): {json_truncated}")
-            print(f"  0x{wave_header_offset:04X}, variable bytes: Wave data starts here")
             
             # Display the first 20 bytes of wave data
             print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
