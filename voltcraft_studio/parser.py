@@ -164,6 +164,7 @@ class ChannelDataParser:
             print(f"  Formulas:")
             print(f"    offset = (reference_zero / 2) % 256")
             print(f"    scale = voltage_rate × 256")
+            print(f"    voltage_mV = (raw_value - offset) × scale")
             print(f"  Wave Length Data (4 bytes): little-endian uint32")
             print(f"  Wave Samples (2 bytes each): big-endian uint16")
             print()
@@ -183,6 +184,8 @@ class ChannelDataParser:
                 print(f"    Voltage_Rate: {ch_voltage_rate_str}")
                 
                 # Calculate offset and scale if we have valid values
+                offset_val = None
+                scale_val = None
                 try:
                     ref_zero_int = int(ch_ref_zero)
                     # Extract numeric value from voltage rate (e.g., "0.781250mv" -> 0.781250)
@@ -190,12 +193,12 @@ class ChannelDataParser:
                     voltage_rate = float(voltage_rate_str)
                     
                     # Calculate offset and scale
-                    offset = (ref_zero_int / 2) % 256
-                    scale = voltage_rate * 256
+                    offset_val = (ref_zero_int / 2) % 256
+                    scale_val = voltage_rate * 256
                     
                     print(f"    Calculations:")
-                    print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset}")
-                    print(f"      scale = {voltage_rate} × 256 = {scale}")
+                    print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset_val}")
+                    print(f"      scale = {voltage_rate} × 256 = {scale_val}")
                 except (ValueError, TypeError):
                     print(f"    Calculations: Unable to calculate (invalid values)")
                 
@@ -221,19 +224,24 @@ class ChannelDataParser:
                             
                             print(f"    Wave Data:")
                             print(f"      0x{ch_len_offset:04X}, 4 bytes: {ch_len_hex} = {ch_data_len} bytes (Channel Data Length)")
-                            print(f"      First 10 bytes (at offset 0x{current_offset:04X}):")
+                            print(f"      First 10 bytes (at offset 0x{current_offset:04X} / {current_offset}):")
                             
                             # Format the preview bytes in 2-byte pairs
                             for i in range(0, len(wave_data_preview), 2):
                                 byte1 = wave_data_preview[i]
                                 byte2 = wave_data_preview[i + 1] if i + 1 < len(wave_data_preview) else 0
-                                offset = current_offset + i
+                                byte_offset = current_offset + i
                                 byte_hex = f'{byte1:02X} {byte2:02X}'
                                 
                                 # Interpret as 16-bit unsigned integer (big-endian)
                                 raw_value = (byte1 << 8) | byte2
                                 
-                                print(f"        0x{offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
+                                # Calculate voltage if we have valid offset and scale
+                                if offset_val is not None and scale_val is not None:
+                                    voltage_mV = (raw_value - offset_val) * scale_val
+                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value} → voltage_mV = ({raw_value} - {offset_val}) × {scale_val} = {voltage_mV}")
+                                else:
+                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
                             
                             # Seek to next channel's data
                             wave_data_offset += 4 + ch_data_len
