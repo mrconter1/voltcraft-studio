@@ -5,6 +5,8 @@ import struct
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from .models import ChannelInfo, TimeSeriesData, DeviceInfo
 from .constants import (
     PARSER_BATCH_SIZE,
@@ -252,13 +254,99 @@ class ChannelDataParser:
                 print()
     
     @staticmethod
-    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
+    def _process_single_channel(
+        file_buffer: bytes,
+        ch_idx: int,
+        channel_config: dict,
+        offset: int,
+        num_channels: int,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        progress_lock: Optional[Lock] = None
+    ) -> Tuple[str, np.ndarray]:
+        """
+        Process a single channel's data in parallel using vectorized NumPy operations.
+        
+        Args:
+            file_buffer: Bytes buffer containing the binary file data
+            ch_idx: Channel index
+            channel_config: Channel configuration from JSON
+            offset: Byte offset where this channel's data starts
+            num_channels: Total number of channels (for progress calculation)
+            progress_callback: Optional callback for progress updates
+            progress_lock: Lock for thread-safe progress updates
+            
+        Returns:
+            Tuple of (channel_name, NumPy array of voltage values)
+        """
+        # Skip channels that are not available
+        if channel_config.get('Availability_Flag', '').upper() != 'TRUE':
+            return channel_config.get('Index', f'CH{ch_idx}'), np.array([], dtype=np.float32)
+        
+        channel_name = channel_config.get('Index', f'CH{ch_idx}')
+        
+        # Read channel data length (4 bytes, little-endian)
+        if offset + 4 > len(file_buffer):
+            return channel_name, np.array([], dtype=np.float32)
+        
+        data_length = int.from_bytes(file_buffer[offset:offset+4], 'little')
+        
+        # Extract voltage conversion parameters
+        voltage_rate_str = channel_config.get('Voltage_Rate', '0.781250mv')
+        probe_mag_str = channel_config.get('Probe_Magnification', '1X')
+        reference_zero = channel_config.get('Reference_Zero', 0)
+        
+        # Parse voltage rate (e.g., "0.781250mv" -> 0.781250)
+        voltage_rate = float(voltage_rate_str.replace('mv', '').replace('mV', ''))
+        
+        # Parse probe magnification (e.g., "10X" -> 10)
+        probe_mag = float(probe_mag_str.replace('X', '').replace('x', ''))
+        
+        # Calculate offset and scale (ONCE for this channel)
+        try:
+            ref_zero_int = int(reference_zero)
+            offset_val = (ref_zero_int / 2) % 256
+            scale_val = voltage_rate * 256
+        except (ValueError, TypeError):
+            offset_val = 128
+            scale_val = voltage_rate * 256
+        
+        # Get channel data bytes
+        data_start = offset + 4
+        data_end = data_start + data_length
+        if data_end > len(file_buffer):
+            data_end = len(file_buffer)
+        
+        channel_bytes = file_buffer[data_start:data_end]
+        
+        # Vectorized approach: Convert all bytes to uint16 array at once (big-endian)
+        if len(channel_bytes) < 2:
+            return channel_name, np.array([], dtype=np.float32)
+        
+        raw_array = np.frombuffer(channel_bytes, dtype='>u2')
+        
+        # Vectorized transformation on entire array (all operations at once)
+        voltage_array = ((raw_array - offset_val) * scale_val * probe_mag / 1000.0).astype(np.float32)
+        
+        # Report progress
+        if progress_callback and progress_lock:
+            with progress_lock:
+                progress_callback(
+                    PARSER_PROGRESS_DATA_START + int((ch_idx / num_channels) * (PARSER_PROGRESS_DATA_END - PARSER_PROGRESS_DATA_START)),
+                    f"Parsing channel {channel_name}..."
+                )
+        
+        return channel_name, voltage_array
+    
+    @staticmethod
+    def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None, use_parallel: bool = True) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from OWON binary file with streaming and progress updates
+        Supports both parallel and sequential processing.
         
         Args:
             file_path: Path to the binary file to parse
             progress_callback: Optional callback function(percent, message) for progress updates
+            use_parallel: If True, process channels in parallel (default True)
             
         Returns:
             Tuple of (DeviceInfo, List of ChannelInfo objects, TimeSeriesData object)
@@ -266,142 +354,134 @@ class ChannelDataParser:
         file_size = os.path.getsize(file_path)
         
         if progress_callback:
+            progress_callback(PARSER_PROGRESS_METADATA_START, "Reading binary file into memory...")
+        
+        # Read entire file into memory ONCE (more efficient for parallel processing)
+        with open(file_path, 'rb') as f:
+            file_buffer = f.read()
+        
+        if progress_callback:
             progress_callback(PARSER_PROGRESS_METADATA_START, "Reading binary header...")
         
-        with open(file_path, 'rb') as f:
-            # Read and validate magic header
-            magic = f.read(6)
-            if magic != ChannelDataParser.MAGIC_HEADER:
-                raise ValueError("Invalid SPBXDS file format: incorrect magic header")
-            
-            # Read JSON length (4 bytes, little-endian)
-            json_length_bytes = f.read(4)
-            json_length = int.from_bytes(json_length_bytes, 'little')
-            
-            # Read and parse JSON
-            if progress_callback:
-                progress_callback(PARSER_PROGRESS_METADATA_DONE, "Parsing metadata...")
-            
-            json_data_bytes = f.read(json_length)
-            
-            # Decode JSON with error handling
-            json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
-            
-            # Fix common JSON issues from Hantek firmware
-            # 1. Remove trailing commas before ] or } (invalid JSON but common firmware bug)
-            json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
-            
-            # 2. Try to find and trim to the last valid JSON close brace
-            try:
+        # Validate magic header
+        if len(file_buffer) < 10:
+            raise ValueError("File too small to be valid SPBXDS format")
+        
+        magic = file_buffer[0:6]
+        if magic != ChannelDataParser.MAGIC_HEADER:
+            raise ValueError("Invalid SPBXDS file format: incorrect magic header")
+        
+        # Read JSON length (4 bytes, little-endian)
+        json_length_bytes = file_buffer[6:10]
+        json_length = int.from_bytes(json_length_bytes, 'little')
+        
+        # Read and parse JSON
+        if progress_callback:
+            progress_callback(PARSER_PROGRESS_METADATA_DONE, "Parsing metadata...")
+        
+        if 10 + json_length > len(file_buffer):
+            raise ValueError("Invalid JSON length in file header")
+        
+        json_data_bytes = file_buffer[10:10 + json_length]
+        
+        # Decode JSON with error handling
+        json_text = json_data_bytes.decode('utf-8', errors='ignore').rstrip('\x00')
+        
+        # Fix common JSON issues from Hantek firmware
+        # 1. Remove trailing commas before ] or } (invalid JSON but common firmware bug)
+        json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+        
+        # 2. Try to find and trim to the last valid JSON close brace
+        try:
+            json_data = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Find the last '}' which should be the end of JSON
+            last_brace = json_text.rfind('}')
+            if last_brace != -1:
+                json_text = json_text[:last_brace + 1]
+                json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
                 json_data = json.loads(json_text)
-            except json.JSONDecodeError:
-                # Find the last '}' which should be the end of JSON
-                last_brace = json_text.rfind('}')
-                if last_brace != -1:
-                    json_text = json_text[:last_brace + 1]
-                    json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
-                    json_data = json.loads(json_text)
-                else:
-                    raise ValueError("Could not parse JSON metadata from binary file")
+            else:
+                raise ValueError("Could not parse JSON metadata from binary file")
+        
+        # Extract device info
+        device_info = DeviceInfo(
+            model=json_data.get('MODEL'),
+            idn=json_data.get('IDN')
+        )
+        
+        # Extract channel information
+        channel_configs = json_data.get('channel', [])
+        channel_names = [ch.get('Index', f'CH{i}') for i, ch in enumerate(channel_configs)]
+        
+        # Create ChannelInfo objects
+        channels = []
+        for channel_info in channel_configs:
+            channel = ChannelInfo.create_from_bin_data(channel_info)
+            channels.append(channel)
+        
+        # Print wave header info
+        ChannelDataParser.print_wave_header_info(file_path)
+        
+        # Parse binary channel data
+        if progress_callback:
+            progress_callback(PARSER_PROGRESS_DATA_START, "Parsing channel data...")
+        
+        offset = 10 + json_length
+        channel_data = {name: [] for name in channel_names}
+        
+        # Calculate offsets for all channels first
+        channel_offsets = []
+        temp_offset = offset
+        for ch_config in channel_configs:
+            channel_offsets.append(temp_offset)
+            if ch_config.get('Availability_Flag', '').upper() == 'TRUE':
+                # Read data length to advance offset
+                if temp_offset + 4 <= len(file_buffer):
+                    data_len = int.from_bytes(file_buffer[temp_offset:temp_offset+4], 'little')
+                    temp_offset += 4 + data_len
+            else:
+                # Still need to advance even for unavailable channels
+                if temp_offset + 4 <= len(file_buffer):
+                    data_len = int.from_bytes(file_buffer[temp_offset:temp_offset+4], 'little')
+                    temp_offset += 4 + data_len
+        
+        # Process channels either in parallel or sequentially
+        if use_parallel and len(channel_configs) > 1:
+            # Use parallel processing with ThreadPoolExecutor
+            progress_lock = Lock()
+            max_workers = min(4, len(channel_configs))  # Use up to 4 threads
             
-            # Extract device info
-            device_info = DeviceInfo(
-                model=json_data.get('MODEL'),
-                idn=json_data.get('IDN')
-            )
-            
-            # Extract channel information
-            channel_configs = json_data.get('channel', [])
-            channel_names = [ch.get('Index', f'CH{i}') for i, ch in enumerate(channel_configs)]
-            
-            # Create ChannelInfo objects
-            channels = []
-            for channel_info in channel_configs:
-                channel = ChannelInfo.create_from_bin_data(channel_info)
-                channels.append(channel)
-            
-            # Print wave header info
-            ChannelDataParser.print_wave_header_info(file_path)
-            
-            # Parse binary channel data
-            if progress_callback:
-                progress_callback(PARSER_PROGRESS_DATA_START, "Parsing channel data...")
-            
-            offset = 10 + json_length
-            channel_data = {name: [] for name in channel_names}
-            
-            last_progress = PARSER_PROGRESS_DATA_START
-            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        ChannelDataParser._process_single_channel,
+                        file_buffer,
+                        ch_idx,
+                        channel_configs[ch_idx],
+                        channel_offsets[ch_idx],
+                        len(channel_configs),
+                        progress_callback,
+                        progress_lock
+                    ): ch_idx for ch_idx in range(len(channel_configs))
+                }
+                
+                for future in as_completed(futures):
+                    channel_name, data = future.result()
+                    channel_data[channel_name] = data
+        else:
+            # Sequential processing (fallback for single channel or explicit request)
             for ch_idx, channel_config in enumerate(channel_configs):
-                # Skip channels that are not available
-                if channel_config.get('Availability_Flag', '').upper() != 'TRUE':
-                    continue
-                
-                # Read channel data length (4 bytes, little-endian)
-                if offset + 4 > file_size:
-                    break
-                
-                f.seek(offset)
-                data_length_bytes = f.read(4)
-                if len(data_length_bytes) < 4:
-                    break
-                
-                data_length = int.from_bytes(data_length_bytes, 'little')
-                offset += 4
-                
-                # Extract voltage conversion parameters
-                voltage_rate_str = channel_config.get('Voltage_Rate', '0.781250mv')
-                probe_mag_str = channel_config.get('Probe_Magnification', '1X')
-                reference_zero = channel_config.get('Reference_Zero', 0)
-                
-                # Parse voltage rate (e.g., "0.781250mv" -> 0.781250)
-                voltage_rate = float(voltage_rate_str.replace('mv', '').replace('mV', ''))
-                
-                # Parse probe magnification (e.g., "10X" -> 10)
-                probe_mag = float(probe_mag_str.replace('X', '').replace('x', ''))
-                
-                # Calculate offset and scale using the same formula as print_wave_header_info
-                try:
-                    ref_zero_int = int(reference_zero)
-                    offset_val = (ref_zero_int / 2) % 256
-                    scale_val = voltage_rate * 256
-                except (ValueError, TypeError):
-                    # Fallback to basic calculation if parsing fails
-                    offset_val = 128
-                    scale_val = voltage_rate * 256
-                
-                # Read and convert samples
-                channel_name = channel_config.get('Index', f'CH{ch_idx}')
-                sample_count = data_length // 2
-                
-                for i in range(sample_count):
-                    f.seek(offset + i * 2)
-                    sample_bytes = f.read(2)
-                    if len(sample_bytes) < 2:
-                        break
-                    
-                    # Unpack as 16-bit unsigned integer (big-endian) - matches binary format
-                    byte1 = sample_bytes[0]
-                    byte2 = sample_bytes[1]
-                    raw_value = (byte1 << 8) | byte2
-                    
-                    # Convert to voltage using offset/scale formula
-                    # voltage is in millivolts, apply probe magnification
-                    voltage_mv = (raw_value - offset_val) * scale_val
-                    voltage = voltage_mv * probe_mag / 1000.0  # Convert mV to V
-                    channel_data[channel_name].append(voltage)
-                
-                offset += data_length
-                
-                # Update progress
-                if progress_callback and file_size > 0:
-                    progress_range = PARSER_PROGRESS_DATA_END - PARSER_PROGRESS_DATA_START
-                    percent = PARSER_PROGRESS_DATA_START + int((ch_idx / len(channel_configs)) * progress_range)
-                    percent = min(PARSER_PROGRESS_DATA_END, percent)
-                    
-                    if percent != last_progress:
-                        progress_callback(percent, f"Parsing channel {channel_name}...")
-                        last_progress = percent
+                channel_name, data = ChannelDataParser._process_single_channel(
+                    file_buffer,
+                    ch_idx,
+                    channel_config,
+                    channel_offsets[ch_idx],
+                    len(channel_configs),
+                    progress_callback,
+                    None
+                )
+                channel_data[channel_name] = data
         
         # Phase 3: Convert to numpy arrays
         if progress_callback:
@@ -411,14 +491,23 @@ class ChannelDataParser:
         max_length = max((len(data) for data in channel_data.values()), default=0)
         indices = np.arange(max_length, dtype=np.int32)
         
-        # Ensure all channels have the same length
+        # Ensure all channels have the same length and convert to numpy arrays if needed
         for channel_name in channel_names:
-            if len(channel_data[channel_name]) < max_length:
-                channel_data[channel_name].extend([np.nan] * (max_length - len(channel_data[channel_name])))
+            data = channel_data[channel_name]
+            # Data is already numpy array from _process_single_channel, but ensure correct length
+            if len(data) < max_length:
+                # Pad with NaN values
+                padded = np.empty(max_length, dtype=np.float32)
+                padded[:len(data)] = data
+                padded[len(data):] = np.nan
+                channel_data[channel_name] = padded
+            elif not isinstance(data, np.ndarray):
+                # Fallback in case of unexpected type
+                channel_data[channel_name] = np.array(data, dtype=np.float32)
         
         time_series = TimeSeriesData(
             indices=indices,
-            channel_data={name: np.array(data, dtype=np.float32) for name, data in channel_data.items()},
+            channel_data=channel_data,  # Already numpy arrays from threads!
             channel_names=channel_names
         )
         
