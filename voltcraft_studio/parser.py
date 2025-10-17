@@ -100,8 +100,7 @@ class ChannelDataParser:
     @staticmethod
     def print_wave_header_info(file_path: str):
         """
-        Print the first 20 bytes after JSON in a structured way.
-        This is the wave data header information.
+        Print the binary file structure with offsets and byte values.
         
         Args:
             file_path: Path to the binary file
@@ -135,20 +134,25 @@ class ChannelDataParser:
                 print("⚠️  Less than 20 bytes available after JSON")
                 return
             
-            # Display file structure information
-            print("\n📋 FILE STRUCTURE:")
-            print(f"  Bytes 0-5:           Magic header '{magic.decode('utf-8')}' (6 bytes)")
-            print(f"  Bytes 6-9:           JSON length = {json_length} bytes (0x{json_length:04X})")
-            print(f"  Bytes 10-{9+json_length}:      JSON data (truncated): {json_truncated}")
-            print(f"  Bytes {wave_header_offset}+:        Wave data starts here")
+            # Format magic header bytes
+            magic_hex = ' '.join(f'{b:02X}' for b in magic)
+            json_len_hex = ' '.join(f'{b:02X}' for b in json_length_bytes)
+            
+            # Display binary file structure information
+            print("\n📋 BINARY FILE STRUCTURE:")
+            print(f"  0x0000, 6 bytes: {magic_hex} = '{magic.decode('utf-8')}' (Magic Header)")
+            print(f"  0x0006, 4 bytes: {json_len_hex} = {json_length} bytes (JSON Length)")
+            print(f"  0x000A, {json_length} bytes: JSON data (truncated): {json_truncated}")
+            print(f"  0x{wave_header_offset:04X}, variable bytes: Wave data starts here")
             
             # Display the first 20 bytes of wave data
-            print(f"\n 🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
+            print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
             for i in range(0, 20, 2):
                 byte1 = wave_header[i]
                 byte2 = wave_header[i + 1] if i + 1 < 20 else 0
                 offset = wave_header_offset + i
-                print(f"  Offset 0x{offset:04X}: {byte1:02X} {byte2:02X}")
+                byte_hex = f'{byte1:02X} {byte2:02X}'
+                print(f"  0x{offset:04X}, 2 bytes: {byte_hex}")
     
     @staticmethod
     def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
