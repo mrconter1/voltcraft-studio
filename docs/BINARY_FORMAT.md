@@ -9,6 +9,18 @@ The Voltcraft DSO6084F oscilloscope uses a proprietary binary format to store wa
 
 ---
 
+## Format Source & Verification
+
+This binary format was **reverse engineered** with help of the [OwonBinfileReader](https://github.com/RobThree/OwonBinfileReader) project. While that source provided foundational insights, it does not completely explain this format. This documentation is tailored specifically to the **Voltcraft DSO6084F** oscilloscope model and may not apply to other models or variants.
+
+**Verification:** The decoding process has been verified by comparing waveform data extracted from binary files against CSV exports from the oscilloscope, ensuring accuracy of the conversion formulas and byte interpretations.
+
+### About the Scaling Factor (256)
+
+The value **256** is a fixed internal scaling factor in the oscilloscope's ADC or display processing pipeline. It converts the JSON's `Voltage_Rate` (which represents "voltage per internal unit") into "voltage per raw sample value." This factor is consistent across all channels and enables precise conversion from raw 16-bit sample values to actual voltage measurements in millivolts.
+
+---
+
 ## Binary Structure Overview
 
 ```
