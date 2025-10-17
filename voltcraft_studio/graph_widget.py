@@ -343,6 +343,7 @@ class TimeSeriesGraphWidget(QWidget):
         self.channel_offset_handles = []  # List of TextItem handles for dragging
         self.dragging_channel_handle = None  # Track which channel handle is being dragged
         self.drag_start_y = None  # Y position when drag started
+        self.last_drag_replot_time = 0  # Throttle re-plots during channel offset dragging
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -470,7 +471,6 @@ class TimeSeriesGraphWidget(QWidget):
             
             # Save which channels are currently visible
             if self.legend is not None:
-                print(f"  🔍 Checking visibility of {len(self.legend.items)} channel(s)...")
                 for item in self.legend.items:
                     # item is a tuple of (PlotDataItem, LabelItem)
                     plot_item = item[0]
@@ -479,7 +479,6 @@ class TimeSeriesGraphWidget(QWidget):
                     # Check if the plot item is visible
                     is_visible = plot_item.isVisible()
                     saved_channel_visibility[channel_name] = is_visible
-                    print(f"  💾 Saving {channel_name} visibility = {is_visible}")
         
         # Store original data for binarize toggle
         self.original_data = time_series_data
@@ -625,13 +624,9 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Restore channel visibility if preserved
         if saved_channel_visibility:
-            print(f"  🔍 Restoring visibility for {len(saved_channel_visibility)} channel(s)...")
             for channel_name, is_visible in saved_channel_visibility.items():
                 if channel_name in plot_items_by_name:
                     plot_items_by_name[channel_name].setVisible(is_visible)
-                    print(f"  ✓ Set {channel_name} visibility = {is_visible}")
-                else:
-                    print(f"  ⚠ Could not find {channel_name} in plot items!")
         
         # Restore view range if preserved, otherwise auto-range
         if saved_view_range is not None:
@@ -974,9 +969,12 @@ class TimeSeriesGraphWidget(QWidget):
             self.channel_offsets[channel_name] += delta_y
             self.drag_start_y = current_y  # Update drag start for next iteration
             
-            # Re-plot to show new offset
-            if self.original_data is not None:
-                self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
+            # Re-plot to show new offset (throttled to 50ms to prevent lag)
+            current_time = time.perf_counter()
+            if (current_time - self.last_drag_replot_time) > 0.05:  # 50ms throttle
+                if self.original_data is not None:
+                    self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
+                self.last_drag_replot_time = current_time
     
     def _update_coordinate_display(self, x: float, y: float):
         """Update the floating coordinate display at cursor position"""
