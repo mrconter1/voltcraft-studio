@@ -4,7 +4,7 @@ import numpy as np
 import time
 from typing import List
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, QPointF
 from PyQt6.QtGui import QColor, QCursor, QMouseEvent
 from concurrent.futures import ThreadPoolExecutor
 
@@ -337,6 +337,12 @@ class TimeSeriesGraphWidget(QWidget):
         # Channel info overlays
         self.channel_info_boxes = []  # List of TextItem widgets for channel info
         self.relative_y_annotation = None # TextItem for relative Y-axis annotation
+        
+        # Channel offset tracking for relative Y-axis mode
+        self.channel_offsets = {}  # Dictionary: channel_name -> offset (in mV)
+        self.channel_offset_handles = []  # List of TextItem handles for dragging
+        self.dragging_channel_handle = None  # Track which channel handle is being dragged
+        self.drag_start_y = None  # Y position when drag started
     
     def _init_ui(self):
         """Initialize the user interface"""
@@ -485,6 +491,9 @@ class TimeSeriesGraphWidget(QWidget):
         # Apply binarization if enabled
         if self.binarize_enabled:
             time_series_data = self._apply_binarize(time_series_data)
+        
+        # Apply channel offsets if in relative Y-axis mode
+        time_series_data = self._apply_channel_offsets(time_series_data)
         
         self.time_series_data = time_series_data
         
@@ -716,6 +725,8 @@ class TimeSeriesGraphWidget(QWidget):
         """Handle view range changes to update channel info box positions"""
         self._update_channel_info_positions()
         self._update_relative_y_annotation()
+        if self.voltage_axis.relative_y_mode:
+            self._create_channel_offset_handles(self.channels_info) # Recreate handles on view change
     
     def clear(self):
         """Clear the plot"""
@@ -751,6 +762,27 @@ class TimeSeriesGraphWidget(QWidget):
             elif event.type() == QEvent.Type.MouseButtonRelease:
                 if event.button() == Qt.MouseButton.LeftButton:
                     self._on_mouse_release(event)
+        
+        # Handle channel handle dragging in relative Y-axis mode
+        if self.voltage_axis.relative_y_mode and obj == self.plot_widget.viewport():
+            if event.type() == QEvent.Type.MouseButtonPress:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._on_channel_handle_press(event)
+                    # If we're dragging a handle, consume the event
+                    if self.dragging_channel_handle is not None:
+                        event.accept()
+                        return True
+            elif event.type() == QEvent.Type.MouseButtonRelease:
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self._on_channel_handle_release(event)
+                    event.accept()
+                    return True
+            elif event.type() == QEvent.Type.MouseMove:
+                # Consume all mouse moves while dragging a handle
+                if self.dragging_channel_handle is not None:
+                    self._on_channel_handle_move(event)
+                    event.accept()
+                    return True
         
         # Always pass the event to the parent
         return super().eventFilter(obj, event)
@@ -899,6 +931,54 @@ class TimeSeriesGraphWidget(QWidget):
             # Draw new marker and measurement
             self._draw_tape_marker(x_pos, y_pos, is_first=False)
             self._draw_tape_measurement()
+    
+    def _on_channel_handle_press(self, event):
+        """Handle mouse press on channel offset handle"""
+        # Get mouse position in scene coordinates
+        scene_pos = event.pos()
+        
+        # Check if clicked on any channel handle
+        for handle in self.channel_offset_handles:
+            handle_rect = handle.mapRectToScene(handle.boundingRect())
+            if handle_rect.contains(QPointF(scene_pos)):
+                self.dragging_channel_handle = handle
+                self.drag_start_y = scene_pos.y()
+                break
+    
+    def _on_channel_handle_release(self, event):
+        """Handle mouse release on channel offset handle"""
+        self.dragging_channel_handle = None
+        self.drag_start_y = None
+    
+    def _on_channel_handle_move(self, event):
+        """Handle mouse move while dragging channel offset handle"""
+        if self.dragging_channel_handle is None or self.drag_start_y is None:
+            return
+        
+        # Get current mouse position
+        scene_pos = event.pos()
+        current_y = scene_pos.y()
+        
+        # Calculate delta in data coordinates
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        # Map scene positions to view coordinates
+        start_view = view_box.mapSceneToView(self.plot_widget.mapToScene(int(0), int(self.drag_start_y)))
+        current_view = view_box.mapSceneToView(self.plot_widget.mapToScene(int(0), int(current_y)))
+        
+        delta_y = current_view.y() - start_view.y()
+        
+        # Update offset
+        channel_name = self.dragging_channel_handle.channel_name
+        if channel_name is not None:
+            self.channel_offsets[channel_name] += delta_y
+            self.drag_start_y = current_y  # Update drag start for next iteration
+            
+            # Re-plot to show new offset
+            if self.original_data is not None:
+                self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
     
     def _update_coordinate_display(self, x: float, y: float):
         """Update the floating coordinate display at cursor position"""
@@ -1076,6 +1156,18 @@ class TimeSeriesGraphWidget(QWidget):
         
         # Update the annotation
         self._update_relative_y_annotation()
+        
+        # Create or remove channel offset handles
+        if enabled and self.channels_info:
+            self._create_channel_offset_handles(self.channels_info)
+        else:
+            # Clear handles when disabling relative mode
+            for handle in self.channel_offset_handles:
+                try:
+                    self.plot_widget.removeItem(handle)
+                except:
+                    pass
+            self.channel_offset_handles.clear()
     
     def _update_relative_y_annotation(self):
         """Update or create the relative Y-axis annotation (e.g., '1 mV/div')"""
@@ -1155,6 +1247,102 @@ class TimeSeriesGraphWidget(QWidget):
         self.relative_y_annotation.setPos(x_pos, y_pos)
         
         self.plot_widget.addItem(self.relative_y_annotation, ignoreBounds=True)
+    
+    def _create_channel_offset_handles(self, channels: List[ChannelInfo]):
+        """Create draggable handles for each channel on the left side"""
+        # Clear old handles
+        for handle in self.channel_offset_handles:
+            try:
+                self.plot_widget.removeItem(handle)
+            except:
+                pass
+        self.channel_offset_handles.clear()
+        
+        # Only create if relative mode is enabled
+        if not self.voltage_axis.relative_y_mode:
+            return
+        
+        # Check if channels info is available
+        if not channels:
+            return
+        
+        # Initialize offsets if not already done
+        for channel in channels:
+            if channel.name not in self.channel_offsets:
+                self.channel_offsets[channel.name] = 0
+        
+        # Get view range
+        view_box = self.plot_widget.getViewBox()
+        if view_box is None:
+            return
+        
+        view_range = view_box.viewRange()
+        x_min, x_max = view_range[0]
+        y_min, y_max = view_range[1]
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        
+        # Create handles for each channel
+        for i, channel in enumerate(channels):
+            color = self.CHANNEL_COLORS[i % len(self.CHANNEL_COLORS)]
+            
+            # Create handle text item
+            handle = pg.TextItem(
+                text=f"◆ {channel.name}",
+                color=color,
+                fill=(30, 30, 30, 220),
+                border=pg.mkPen(color=color, width=2),
+                anchor=(1.0, 0.5)  # Right-center anchor
+            )
+            
+            # Position on the left side, fixed position (not affected by offset)
+            x_pos = x_min + (x_range * 0.05)  # 5% from left edge
+            y_pos = y_min + (y_range * 0.15) + (i * y_range * 0.12)  # Fixed position, no offset added
+            handle.setPos(x_pos, y_pos)
+            handle.channel_name = channel.name
+            handle.channel_index = i
+            
+            self.plot_widget.addItem(handle, ignoreBounds=True)
+            self.channel_offset_handles.append(handle)
+        
+        print(f"✓ Created {len(channels)} channel offset handles")
+    
+    def _update_channel_offsets_from_drag(self, delta_y: float):
+        """Update channel offset based on mouse drag"""
+        if self.dragging_channel_handle is None:
+            return
+        
+        channel_name = self.dragging_channel_handle.channel_name
+        if channel_name is None:
+            return
+        
+        # Update offset
+        self.channel_offsets[channel_name] += delta_y
+        
+        # Re-plot to show new offsets
+        if self.original_data is not None:
+            self.plot_data(self.original_data, self.channels_info, preserve_view=True, preserve_cache=True)
+    
+    def _apply_channel_offsets(self, time_series_data: TimeSeriesData) -> TimeSeriesData:
+        """Apply channel offsets to the data"""
+        if not self.voltage_axis.relative_y_mode or not self.channel_offsets:
+            return time_series_data
+        
+        # Create new channel data with offsets applied
+        offset_channel_data = {}
+        for channel_name, voltage_data in time_series_data.channel_data.items():
+            offset = self.channel_offsets.get(channel_name, 0)
+            if offset != 0:
+                offset_channel_data[channel_name] = voltage_data + offset
+            else:
+                offset_channel_data[channel_name] = voltage_data
+        
+        # Return new TimeSeriesData with offsets applied
+        return TimeSeriesData(
+            indices=time_series_data.indices,
+            channel_data=offset_channel_data,
+            channel_names=time_series_data.channel_names
+        )
     
     def _process_channel_binarize(self, args: tuple) -> tuple:
         """
