@@ -161,11 +161,38 @@ class ChannelDataParser:
             # Display channel information
             channels = json_data.get('channel', [])
             print(f"\n📊 CHANNELS FROM JSON ({len(channels)} total):")
+            print(f"  Formulas:")
+            print(f"    offset = (reference_zero / 2) % 256")
+            print(f"    scale = voltage_rate × 256")
+            print()
+            
             for ch in channels:
                 ch_name = ch.get('Index', '?')
                 ch_ref_zero = ch.get('Reference_Zero', '?')
-                ch_voltage_rate = ch.get('Voltage_Rate', '?')
-                print(f"  {ch_name}: Reference_Zero={ch_ref_zero}, Voltage_Rate={ch_voltage_rate}")
+                ch_voltage_rate_str = ch.get('Voltage_Rate', '?')
+                
+                print(f"  {ch_name}:")
+                print(f"    Reference_Zero: {ch_ref_zero}")
+                print(f"    Voltage_Rate: {ch_voltage_rate_str}")
+                
+                # Calculate offset and scale if we have valid values
+                try:
+                    ref_zero_int = int(ch_ref_zero)
+                    # Extract numeric value from voltage rate (e.g., "0.781250mv" -> 0.781250)
+                    voltage_rate_str = str(ch_voltage_rate_str).replace('mv', '').replace('mV', '')
+                    voltage_rate = float(voltage_rate_str)
+                    
+                    # Calculate offset and scale
+                    offset = (ref_zero_int / 2) % 256
+                    scale = voltage_rate * 256
+                    
+                    print(f"    Calculations:")
+                    print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset}")
+                    print(f"      scale = {voltage_rate} × 256 = {scale}")
+                except (ValueError, TypeError):
+                    print(f"    Calculations: Unable to calculate (invalid values)")
+                
+                print()
             
             # Display the first 20 bytes of wave data
             print(f"\n🌊 WAVE DATA HEADER (First 20 bytes at offset 0x{wave_header_offset:04X}):")
