@@ -467,7 +467,6 @@ class TimeSeriesGraphWidget(QWidget):
                 saved_view_range = view_box.viewRange()
                 # Also save auto-range state
                 saved_auto_range_state = view_box.autoRangeEnabled()
-                print(f"  💾 Saving view: X=[{saved_view_range[0][0]:.2f}, {saved_view_range[0][1]:.2f}], Y=[{saved_view_range[1][0]:.2f}, {saved_view_range[1][1]:.2f}]")
             
             # Save which channels are currently visible
             if self.legend is not None:
@@ -645,7 +644,6 @@ class TimeSeriesGraphWidget(QWidget):
                 view_box.enableAutoRange(enable=False)
                 # Set the exact range we saved
                 view_box.setRange(xRange=saved_view_range[0], yRange=saved_view_range[1], padding=0, update=True)
-                print(f"  ✓ Restored view: X=[{saved_view_range[0][0]:.2f}, {saved_view_range[0][1]:.2f}], Y=[{saved_view_range[1][0]:.2f}, {saved_view_range[1][1]:.2f}]")
         else:
             # Auto-range to show all data
             self.plot_widget.autoRange()
@@ -1304,8 +1302,6 @@ class TimeSeriesGraphWidget(QWidget):
             
             self.plot_widget.addItem(handle, ignoreBounds=True)
             self.channel_offset_handles.append(handle)
-        
-        print(f"✓ Created {len(channels)} channel offset handles")
     
     def _update_channel_offsets_from_drag(self, delta_y: float):
         """Update channel offset based on mouse drag"""
