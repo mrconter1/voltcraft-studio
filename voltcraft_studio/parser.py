@@ -98,6 +98,43 @@ class ChannelDataParser:
         return device_info, channels
     
     @staticmethod
+    def print_wave_header_info(file_path: str):
+        """
+        Print the first 20 bytes after JSON in a structured way.
+        This is the wave data header information.
+        
+        Args:
+            file_path: Path to the binary file
+        """
+        with open(file_path, 'rb') as f:
+            # Read magic header and JSON metadata
+            magic = f.read(6)
+            if magic != ChannelDataParser.MAGIC_HEADER:
+                return
+            
+            json_length_bytes = f.read(4)
+            json_length = int.from_bytes(json_length_bytes, 'little')
+            
+            # Skip JSON data
+            f.seek(10 + json_length)
+            
+            # Read first 20 bytes after JSON
+            wave_header = f.read(20)
+            
+            if len(wave_header) < 20:
+                print("⚠️  Less than 20 bytes available after JSON")
+                return
+            
+            # Display in simple hex format
+            print("\n Byte Values (Hex):")
+            hex_line = "  "
+            for i, byte in enumerate(wave_header):
+                hex_line += f"{byte:02X} "
+                if (i + 1) % 8 == 0:
+                    hex_line += " "
+            print(hex_line + "\n")
+    
+    @staticmethod
     def parse_binary_streaming(file_path: str, progress_callback: Optional[Callable[[int, str], None]] = None) -> Tuple[DeviceInfo, List[ChannelInfo], TimeSeriesData]:
         """
         Parse channel data from OWON binary file with streaming and progress updates
@@ -165,6 +202,9 @@ class ChannelDataParser:
             for channel_info in channel_configs:
                 channel = ChannelInfo.create_from_bin_data(channel_info)
                 channels.append(channel)
+            
+            # Print wave header info
+            ChannelDataParser.print_wave_header_info(file_path)
             
             # Parse binary channel data
             if progress_callback:
