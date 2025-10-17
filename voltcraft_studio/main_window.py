@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self.tape_action.setEnabled(False)
         self.binarize_action.setEnabled(False)
         self.decode_action.setEnabled(False)
+        self.relative_y_action.setEnabled(False)
         
         # Load initial file if provided
         if initial_file:
@@ -268,6 +269,14 @@ class MainWindow(QMainWindow):
         self.tape_action.setShortcut("2")
         self.tape_action.triggered.connect(self.select_tape_tool)
         toolbar.addAction(self.tape_action)
+        
+        # Create relative Y-axis tool action
+        self.relative_y_action = QAction(IconFactory.create_relative_y_axis_icon(), "Relative Y-Axis", self)
+        self.relative_y_action.setToolTip("Toggle relative Y-axis adjustment mode with per-channel controls [Shortcut: 5]")
+        self.relative_y_action.setCheckable(True)
+        self.relative_y_action.setShortcut("5")
+        self.relative_y_action.triggered.connect(self.toggle_relative_y)
+        toolbar.addAction(self.relative_y_action)
         
         # Add separator
         toolbar.addSeparator()
@@ -553,6 +562,11 @@ class MainWindow(QMainWindow):
         self.tape_action.setChecked(True)
         self.graph_widget.set_tool("tape")
     
+    def toggle_relative_y(self):
+        """Toggle relative Y-axis adjustment mode on/off"""
+        is_relative_y_enabled = self.relative_y_action.isChecked()
+        # TODO: Implement relative Y-axis mode toggle functionality
+    
     def toggle_binarize(self):
         """Toggle signal binarization on/off"""
         is_binarized = self.binarize_action.isChecked()
@@ -813,6 +827,7 @@ class MainWindow(QMainWindow):
         self.tape_action.setEnabled(True)
         self.binarize_action.setEnabled(True)
         self.decode_action.setEnabled(True) # Enable decode action
+        self.relative_y_action.setEnabled(True)
         
         # Hide progress bar
         self.graph_widget.hide_progress()

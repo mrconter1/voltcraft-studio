@@ -72,4 +72,9 @@ class IconFactory:
     def create_decode_icon() -> QIcon:
         """Create a decode/mapping icon using Font Awesome"""
         return qta.icon('fa6s.square-binary', color=COLOR_GOLD)
+    
+    @staticmethod
+    def create_relative_y_axis_icon() -> QIcon:
+        """Create an up-down arrows icon for relative Y-axis adjustment"""
+        return qta.icon('fa6s.arrows-up-down', color=COLOR_GOLD)
 
