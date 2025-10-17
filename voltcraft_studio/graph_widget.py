@@ -648,6 +648,13 @@ class TimeSeriesGraphWidget(QWidget):
         # Create channel info overlays if channels provided
         if channels:
             self._create_channel_info_overlays(channels)
+            
+            # Recreate channel offset handles if in relative Y-axis mode
+            # (they get removed by plot_widget.clear() so need to be re-added)
+            if self.voltage_axis.relative_y_mode:
+                self._create_channel_offset_handles(channels)
+                # Also recreate the relative Y-axis annotation (voltage per div)
+                self._update_relative_y_annotation()
     
     def _create_channel_info_overlays(self, channels: List[ChannelInfo]):
         """Create floating info boxes for each channel on the graph"""
