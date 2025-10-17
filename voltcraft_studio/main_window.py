@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
 
         # Create decode action
         self.decode_action = QAction(IconFactory.create_decode_icon(), "Decode Signal", self)
-        self.decode_action.setToolTip("Decode signal using a predefined dictionary (e.g., ASCII, HEX, etc.)")
+        self.decode_action.setToolTip("Decode NMC9307 serial protocol from SK/CS/DI/DO signals [Shortcut: 4]")
         self.decode_action.triggered.connect(self.show_decode_dialog)
         toolbar.addAction(self.decode_action)
         
@@ -726,12 +726,33 @@ class MainWindow(QMainWindow):
         <b>1</b> - Switch to Move tool<br>
         <b>2</b> - Switch to Tape Measure tool<br>
         <b>3</b> - Toggle signal binarization<br>
+        <b>4</b> - Decode NMC9307 protocol<br>
         <b>Ctrl + C</b> - Copy selected cells (Data Info tab)<br>
         <b>Ctrl + Scroll</b> - Zoom X-axis only (time)<br>
         <b>Shift + Scroll</b> - Zoom Y-axis only (voltage)
         </p>
         """)
         tab_widget.addTab(shortcuts_tab, "Shortcuts")
+        
+        # Add NMC9307 Protocol tab
+        protocol_tab = QTextEdit()
+        protocol_tab.setReadOnly(True)
+        protocol_tab.setHtml("""
+        <h3>NMC9307 Protocol Decoding</h3>
+        <p style='margin-left: 20px;'>
+        <b>Device:</b> NMC9307 16-bit Serial EEPROM (National Semiconductor)<br>
+        <b>Signals Required:</b><br>
+        &nbsp;&nbsp;• <b>SK</b> - Serial Clock (data shifted on rising edge)<br>
+        &nbsp;&nbsp;• <b>CS</b> - Chip Select (active HIGH)<br>
+        &nbsp;&nbsp;• <b>DI</b> - Data In (serial data input)<br>
+        &nbsp;&nbsp;• <b>DO</b> - Data Out (serial data output, optional)<br>
+        <p>
+        <b>Instruction Format:</b> 1 dummy + 1 start + 4-bit opcode + 4-bit address + optional 16-bit data<br>
+        <b>Reference:</b> <a href='http://www.bitsavers.org/components/national/_dataBooks/1990_400067_National_Memory_Databook.pdf'>National Memory Databook (1990)</a> - NMC9307 Serial EEPROM specification
+        </p>
+        """)
+        protocol_tab.setOpenExternalLinks(True)
+        tab_widget.addTab(protocol_tab, "NMC9307 Protocol")
 
         # Layout
         layout = QVBoxLayout(help_dialog)

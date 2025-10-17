@@ -20,6 +20,10 @@ This includes:
 - Voltage conversion formulas with examples
 - Byte order reference and implementation checklist
 
+### NMC9307 Serial EEPROM Protocol
+
+NMC9307 protocol decoder with **[National Memory Databook (1990)](http://www.bitsavers.org/components/national/_dataBooks/1990_400067_National_Memory_Databook.pdf)** reference - decodes SK (clock), CS (select), DI (data in), and DO (data out) signals.
+
 ## 🚀 Quick Start
 
 ### Download (Windows)
@@ -48,6 +52,8 @@ python main.py "data.txt"              # Optional: Load file on startup
 ### Measurement Tools
 - **Tape Measure** - click two points to measure Δt and ΔV
 - **Move Tool** - standard pan and zoom navigation
+- **Signal Binarization** - convert noisy signals to clean binary square waves
+- **NMC9307 Protocol Decoder** - decode serial EEPROM traffic (SK/CS/DI/DO signals)
 - Multi-channel support (CH1-CH4) with color-coded traces
 
 ### Interface

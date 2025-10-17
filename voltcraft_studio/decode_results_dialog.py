@@ -80,6 +80,15 @@ class DecodeResultsDialog(QDialog):
         title_label.setStyleSheet("font-size: 13pt; font-weight: bold; color: #FFD700;")
         main_layout.addWidget(title_label)
         
+        # Protocol info
+        protocol_info = QLabel(
+            "NMC9307 16-bit Serial EEPROM (National Semiconductor)\n"
+            "Format: 1 dummy bit + 1 start bit + 4-bit opcode + 4-bit address + optional 16-bit data\n"
+            "Reference: National Memory Databook (1990), NMC9307 Serial EEPROM specification"
+        )
+        protocol_info.setStyleSheet("color: #a0a0a0; font-size: 9pt; padding: 8px; background-color: #252525; border-radius: 4px;")
+        main_layout.addWidget(protocol_info)
+        
         # Configuration summary
         config_text = f"Time Interval: {self.time_interval_str}  |  "
         config_text += " | ".join([f"{ch}→{st}" for ch, st in sorted(self.channel_mapping.items())])
