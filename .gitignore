@@ -11,3 +11,4 @@ icon.ico
 
 # PyInstaller cache
 *.pyc
+byte_mapping_comparison.txt
