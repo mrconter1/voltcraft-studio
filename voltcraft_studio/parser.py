@@ -180,11 +180,16 @@ class ChannelDataParser:
         channels = json_data.get('channel', [])
         print(f"\n📊 CHANNELS FROM JSON ({len(channels)} total):")
         print(f"  Formulas:")
-        print(f"    offset = (reference_zero / 2) % 256")
+        print(f"    lower_byte = (raw_16bit_BE >> 0) & 0xFF")
         print(f"    scale = voltage_rate × 256")
-        print(f"    voltage_mV = (raw_value - offset) × scale")
+        print(f"    if Reference_Zero == 0:")
+        print(f"      raw = lower_byte if lower_byte < 128 else lower_byte - 256  (signed)")
+        print(f"      voltage_mV = raw × scale")
+        print(f"    else:")
+        print(f"      offset = (Reference_Zero / 2) % 256")
+        print(f"      voltage_mV = (lower_byte - offset) × scale")
         print(f"  Wave Length Data (4 bytes): little-endian uint32")
-        print(f"  Wave Samples (2 bytes each): big-endian uint16")
+        print(f"  Wave Samples (2 bytes each): big-endian uint16 containers (8-bit ADC)")
         print()
         
         # Track wave data offset for reading channel-specific wave data
@@ -200,22 +205,24 @@ class ChannelDataParser:
             print(f"    Reference_Zero: {ch_ref_zero}")
             print(f"    Voltage_Rate: {ch_voltage_rate_str}")
             
-            # Calculate offset and scale if we have valid values
+            # Calculate scale if we have valid values
             offset_val = None
             scale_val = None
+            ref_zero_int = None
             try:
                 ref_zero_int = int(ch_ref_zero)
                 # Extract numeric value from voltage rate (e.g., "0.781250mv" -> 0.781250)
                 voltage_rate_str = str(ch_voltage_rate_str).replace('mv', '').replace('mV', '')
                 voltage_rate = float(voltage_rate_str)
                 
-                # Calculate offset and scale
-                offset_val = (ref_zero_int / 2) % 256
+                # Calculate scale
                 scale_val = voltage_rate * 256
                 
                 print(f"    Calculations:")
-                print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset_val}")
                 print(f"      scale = {voltage_rate} × 256 = {scale_val}")
+                if ref_zero_int != 0:
+                    offset_val = (ref_zero_int / 2) % 256
+                    print(f"      offset = ({ref_zero_int} / 2) % 256 = {offset_val}")
             except (ValueError, TypeError):
                 print(f"    Calculations: Unable to calculate (invalid values)")
             
@@ -251,14 +258,24 @@ class ChannelDataParser:
                             byte_hex = f'{byte1:02X} {byte2:02X}'
                             
                             # Interpret as 16-bit unsigned integer (big-endian)
-                            raw_value = (byte1 << 8) | byte2
+                            raw_16bit = (byte1 << 8) | byte2
                             
-                            # Calculate voltage if we have valid offset and scale
-                            if offset_val is not None and scale_val is not None:
-                                voltage_mV = (raw_value - offset_val) * scale_val
-                                print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value} → voltage_mV = ({raw_value} - {offset_val}) × {scale_val} = {voltage_mV}")
+                            # Extract lower byte (8-bit ADC sample)
+                            lower_byte = raw_16bit & 0xFF
+                            
+                            # Calculate voltage if we have valid scale
+                            if scale_val is not None and ref_zero_int is not None:
+                                if ref_zero_int == 0:
+                                    # Signed 8-bit interpretation
+                                    raw = lower_byte if lower_byte < 128 else lower_byte - 256
+                                    voltage_mV = raw * scale_val
+                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} → lower_byte={lower_byte} → raw={raw} (signed) → voltage_mV = {raw} × {scale_val} = {voltage_mV}")
+                                else:
+                                    # Unsigned 8-bit with offset
+                                    voltage_mV = (lower_byte - offset_val) * scale_val
+                                    print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} → lower_byte={lower_byte} → voltage_mV = ({lower_byte} - {offset_val}) × {scale_val} = {voltage_mV}")
                             else:
-                                print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} = {raw_value}")
+                                print(f"        0x{byte_offset:04X}, 2 bytes: {byte_hex} → lower_byte={lower_byte}")
                         
                         # Advance to next channel's data
                         wave_data_offset += 4 + ch_data_len
@@ -315,14 +332,8 @@ class ChannelDataParser:
         # Parse probe magnification (e.g., "10X" -> 10)
         probe_mag = float(probe_mag_str.replace('X', '').replace('x', ''))
         
-        # Calculate offset and scale (ONCE for this channel)
-        try:
-            ref_zero_int = int(reference_zero)
-            offset_val = (ref_zero_int / 2) % 256
-            scale_val = voltage_rate * 256
-        except (ValueError, TypeError):
-            offset_val = 128
-            scale_val = voltage_rate * 256
+        # Calculate scale (ONCE for this channel)
+        scale_val = voltage_rate * 256
         
         # Get channel data bytes
         data_start = offset + 4
@@ -336,10 +347,32 @@ class ChannelDataParser:
         if len(channel_bytes) < 2:
             return channel_name, np.array([], dtype=np.float32)
         
-        raw_array = np.frombuffer(channel_bytes, dtype='>u2')
+        raw_16bit_BE = np.frombuffer(channel_bytes, dtype='>u2')
         
-        # Vectorized transformation on entire array (all operations at once)
-        voltage_array = ((raw_array - offset_val) * scale_val * probe_mag / 1000.0).astype(np.float32)
+        # Extract lower byte from 16-bit containers (8-bit ADC samples)
+        lower_byte = raw_16bit_BE.astype(np.uint8)
+        
+        # Apply interpretation based on Reference_Zero
+        try:
+            ref_zero_int = int(reference_zero)
+        except (ValueError, TypeError):
+            ref_zero_int = 0
+        
+        if ref_zero_int == 0:
+            # Signed 8-bit interpretation
+            # Convert to signed: values >= 128 become negative
+            # Cast to int16 first to avoid uint8 overflow
+            raw = lower_byte.astype(np.int16)
+            raw = np.where(raw < 128, raw, raw - 256).astype(np.float32)
+            voltage_mV = raw * scale_val
+        else:
+            # Unsigned 8-bit with offset
+            raw = lower_byte.astype(np.float32)
+            offset_val = (ref_zero_int / 2) % 256
+            voltage_mV = (raw - offset_val) * scale_val
+        
+        # Convert to volts and apply probe magnification
+        voltage_array = (voltage_mV * probe_mag / 1000.0).astype(np.float32)
         
         # Report progress
         if progress_callback and progress_lock:
